@@ -1,3 +1,3 @@
-2-d physics rogue-lite platformer shooter
+made this to play on UW summer camp bus rides!!!
 
-https://landgreen.github.io/n-gon/
+https://msunitha1982.github.io/n-gon/
