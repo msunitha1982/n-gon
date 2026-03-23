@@ -277,7 +277,7 @@ const tech = {
         if (tech.isNoDeath && m.health < 0) dmg *= 3
         if (tech.noDefenseSettingDamage && m.defense() === 1) dmg *= 2.5
         if (tech.isImmunityDamage && m.immuneCycle > m.cycle) dmg *= 3
-        if (tech.isPowerUpDamage) dmg *= 1 + 0.07 * powerUp.length
+        if (tech.isPowerUpDamage) dmg *= 1 + 0.08 * powerUp.length
         if (tech.isDamageCooldown) dmg *= m.lastKillCycle + tech.isDamageCooldownTime > m.cycle ? 0.4 : 4
         if (tech.isDivisor && b.activeGun !== undefined && b.activeGun !== null && b.guns[b.activeGun].ammo % 3 === 0) dmg *= 2
         if (tech.isOffGroundDamage && !m.onGround && m.cycle - m.lastOnGroundCycle > 65) dmg *= 2.5
@@ -318,7 +318,7 @@ const tech = {
     },
     duplicationChance() {
         if (level.isNoDuplicate) return 0
-        return Math.min(1, Math.max(0, (tech.isPowerUpsVanish ? 0.13 : 0) + (tech.isStimulatedEmission ? 0.2 : 0) + tech.duplication + tech.duplicateChance + 0.05 * tech.isExtraGunField + m.duplicateChance + tech.fieldDuplicate + 0.08 * tech.isDuplicateMobs + 0.03 * tech.isMassProduction + 0.04 * tech.isHealAttract + tech.cloakDuplication + (tech.isAnthropicTech && tech.isDeathAvoidedThisLevel ? 0.6 : 0) + 0.06 * tech.isDupEnergy + tech.blockDupCount + ((tech.wire && tech.wire.segments.length) ? 0.01 * tech.wire.segments.length : 0)))
+        return Math.min(1, Math.max(0, (tech.isPowerUpsVanish ? 0.13 : 0) + (tech.isStimulatedEmission ? 0.2 : 0) + tech.duplication + tech.duplicateChance + 0.05 * tech.isExtraGunField + m.duplicateChance + tech.fieldDuplicate + 0.08 * tech.isDuplicateMobs + 0.03 * tech.isMassProduction + 0.05 * tech.isHealAttract + tech.cloakDuplication + (tech.isAnthropicTech && tech.isDeathAvoidedThisLevel ? 0.6 : 0) + 0.06 * tech.isDupEnergy + tech.blockDupCount + ((tech.wire && tech.wire.segments.length) ? 0.01 * tech.wire.segments.length : 0)))
     },
     setTechFrequency(name, frequency) {
         for (let i = 0, len = tech.tech.length; i < len; i++) {
@@ -601,7 +601,7 @@ const tech = {
     },
     {
         name: "mass-energy equivalence",
-        description: `<strong>1.5x</strong> <strong class='color-d'>damage</strong> and <strong>1.2x</strong> <strong class="color-speed">movement</strong><br><strong class='color-f'>energy</strong> replaces your <strong class='color-h'>health</strong>`,
+        description: `<strong>1.4x</strong> <strong class='color-d'>damage</strong> and <strong>1.2x</strong> <strong class="color-speed">movement</strong><br><strong class='color-f'>energy</strong> replaces your <strong class='color-h'>health</strong>`,
         maxCount: 1,
         count: 0,
         frequency: 1,
@@ -611,7 +611,7 @@ const tech = {
             return !m.isAltSkin && !tech.isPiezo && !tech.isRewindAvoidDeath && !tech.isAnnihilation && !tech.isNoDeath//&& !tech.isAmmoFromHealth && !tech.isRewindGun
         },
         requires: "not piezoelectricity, CPT, annihilation, quantum Zeno effect",
-        damage: 1.5,
+        damage: 1.4,
         effect() {
             m.damageDone *= this.damage
 
@@ -649,30 +649,31 @@ const tech = {
     {
         name: "ionization energy",
         descriptionFunction() {
-            return `convert current and future <div class="heal-circle"></div> into <div class="heal-circle" style="background-color: #ff0; border: 0.5px #000 solid;"></div><br><div class="heal-circle" style="background-color: #ff0; border: 0.5px #000 solid;"></div> give <strong>+${15 * tech.largerHeals * (tech.isHalfHeals ? 0.5 : 1)}</strong> maximum <strong class='color-f'>energy</strong>`
+            // return `convert current and future <div class="heal-circle"></div> into <div class="heal-circle" style="background-color: #ff0; border: 0.5px #000 solid;"></div><br><div class="heal-circle" style="background-color: #ff0; border: 0.5px #000 solid;"></div> give <strong>+${15 * tech.largerHeals * (tech.isHalfHeals ? 0.5 : 1)}</strong> maximum <strong class='color-f'>energy</strong>`
+            return `convert future <div class="heal-circle"></div> into ${powerUps.orb.Casimir(1)}<br><em>${powerUps.Casimir.descriptionFunction()}</em>`
         },
         maxCount: 1,
         count: 0,
-        frequency: 5,
-        frequencyDefault: 5,
+        frequency: 3,
+        frequencyDefault: 3,
         allowed() {
             return tech.isEnergyHealth && !tech.isOverHeal
         },
         requires: "mass-energy equivalence, not quenching",
         effect() {
             powerUps.healGiveMaxEnergy = true; //tech.healMaxEnergyBonus given from heal power up
-            powerUps.heal.color = "#ff0" //"#0ae"
-            for (let i = 0; i < powerUp.length; i++) { //find active heal power ups and adjust color live
-                if (powerUp[i].name === "heal") powerUp[i].color = powerUps.heal.color
-            }
+            // powerUps.heal.color = "#ff0" //"#0ae"
+            // for (let i = 0; i < powerUp.length; i++) { //find active heal power ups and adjust color live
+            //     if (powerUp[i].name === "heal") powerUp[i].color = powerUps.heal.color
+            // }
         },
         remove() {
             powerUps.healGiveMaxEnergy = false;
             // tech.healMaxEnergyBonus = 0
-            powerUps.heal.color = "#0eb"
-            for (let i = 0; i < powerUp.length; i++) { //find active heal power ups and adjust color live
-                if (powerUp[i].name === "heal") powerUp[i].color = powerUps.heal.color
-            }
+            // powerUps.heal.color = "#0eb"
+            // for (let i = 0; i < powerUp.length; i++) { //find active heal power ups and adjust color live
+            //     if (powerUp[i].name === "heal") powerUp[i].color = powerUps.heal.color
+            // }
         }
     },
     {
@@ -742,6 +743,46 @@ const tech = {
                 window.removeEventListener("keydown", m.eigen.keyListener);
                 m.resetSkin();
             }
+        }
+    },
+    {
+        name: "normal mode",
+        descriptionFunction() {
+            return `<strong>eigenstate</strong> generates isotropic <strong>phonon</strong> waves<br>for <strong>10</strong> seconds after <strong>swapping</strong> states`
+        },
+        maxCount: 1,
+        count: 0,
+        frequency: 3,
+        frequencyDefault: 3,
+        allowed() {
+            return tech.isEigenstate
+        },
+        requires: "eigenstate",
+        effect() {
+            tech.isNormalMode = true;
+        },
+        remove() {
+            tech.isNormalMode = false;
+        }
+    },
+    {
+        name: "first harmonic",
+        descriptionFunction() {
+            return `if your <strong>eigenstate</strong> is moving get<br>up to <strong>7x</strong> normal mode's wave <strong>frequency</strong>`
+        },
+        maxCount: 1,
+        count: 0,
+        frequency: 3,
+        frequencyDefault: 3,
+        allowed() {
+            return tech.isNormalMode
+        },
+        requires: "normal mode",
+        effect() {
+            tech.isFirstHarmonic = true;
+        },
+        remove() {
+            tech.isFirstHarmonic = false;
         }
     },
     {
@@ -1522,58 +1563,58 @@ const tech = {
         requires: "",
         effect() {
             tech.isDilate = true
-            simulation.ephemera.push({
-                HEX_DIRS: [{ x: 0, y: -1 }, { x: 0.8660254, y: -0.5 }, { x: 0.8660254, y: 0.5 }, { x: 0, y: 1 }, { x: -0.8660254, y: 0.5 }, { x: -0.8660254, y: -0.5 }],
-                do() {
-                    if (tech.isDilate) {
-                        const outerRadius = 30;
-                        const radius = 8 * (1.9 + 1.1 * Math.sin(m.cycle * 0.01));
-                        ctx.save();
-                        ctx.translate(m.pos.x, m.pos.y - 90);
-                        // ctx.translate(simulation.mouseInGame.x, simulation.mouseInGame.y);
+            if (!localSettings.isHideHUD) {
+                simulation.ephemera.push({
+                    HEX_DIRS: [{ x: 0, y: -1 }, { x: 0.8660254, y: -0.5 }, { x: 0.8660254, y: 0.5 }, { x: 0, y: 1 }, { x: -0.8660254, y: 0.5 }, { x: -0.8660254, y: -0.5 }],
+                    do() {
+                        if (tech.isDilate) {
+                            const outerRadius = 30;
+                            const radius = 8 * (1.9 + 1.1 * Math.sin(m.cycle * 0.01));
+                            ctx.save();
+                            ctx.translate(m.pos.x, m.pos.y - 90);
+                            //white background circle
+                            ctx.beginPath();
+                            ctx.arc(0, 0, outerRadius, 0, 2 * Math.PI);
+                            ctx.clip(); //to cap the blade extensions
+                            ctx.fillStyle = `#111`;
+                            ctx.fill();
 
-                        //white background circle
-                        ctx.beginPath();
-                        ctx.arc(0, 0, outerRadius, 0, 2 * Math.PI);
-                        ctx.clip(); //to cap the blade extensions
-                        ctx.fillStyle = `#111`;
-                        ctx.fill();
+                            // the inner hexagon
+                            ctx.beginPath();
+                            for (let i = 0; i < 6; i++) {
+                                ctx.lineTo(radius * this.HEX_DIRS[i].x, radius * this.HEX_DIRS[i].y);
+                            }
+                            ctx.closePath();
+                            ctx.fillStyle = `rgb(255, 55, 95)`
+                            ctx.fill();
 
-                        // the inner hexagon
-                        ctx.beginPath();
-                        for (let i = 0; i < 6; i++) {
-                            ctx.lineTo(radius * this.HEX_DIRS[i].x, radius * this.HEX_DIRS[i].y);
+                            // blade extensions
+                            ctx.beginPath();
+                            for (let i = 0; i < 6; i++) {
+                                const curr = this.HEX_DIRS[i];
+                                const prev = this.HEX_DIRS[(i + 5) % 6];
+                                const xStart = radius * prev.x;
+                                const yStart = radius * prev.y;
+                                const dx = (curr.x - prev.x);
+                                const dy = (curr.y - prev.y);
+                                const xEnd = xStart + dx * 200;
+                                const yEnd = yStart + dy * 200;
+                                ctx.moveTo(xStart, yStart);
+                                ctx.lineTo(xEnd, yEnd);
+                            }
+                            ctx.strokeStyle = `rgb(255, 55, 95)`;
+                            ctx.lineWidth = 2;
+                            // ctx.lineCap = "butt";
+                            ctx.stroke();
+
+                            ctx.restore();
+                            return;
+                        } else {
+                            simulation.removeEphemera(this);
                         }
-                        ctx.closePath();
-                        ctx.fillStyle = `rgb(255, 55, 95)`
-                        ctx.fill();
-
-                        // blade extensions
-                        ctx.beginPath();
-                        for (let i = 0; i < 6; i++) {
-                            const curr = this.HEX_DIRS[i];
-                            const prev = this.HEX_DIRS[(i + 5) % 6];
-                            const xStart = radius * prev.x;
-                            const yStart = radius * prev.y;
-                            const dx = (curr.x - prev.x);
-                            const dy = (curr.y - prev.y);
-                            const xEnd = xStart + dx * 200;
-                            const yEnd = yStart + dy * 200;
-                            ctx.moveTo(xStart, yStart);
-                            ctx.lineTo(xEnd, yEnd);
-                        }
-                        ctx.strokeStyle = `rgb(255, 55, 95)`;
-                        ctx.lineWidth = 2;
-                        // ctx.lineCap = "butt";
-                        ctx.stroke();
-
-                        ctx.restore();
-                        return;
-                    } else {
-                        simulation.removeEphemera(this);
-                    }
-                },
-            });
+                    },
+                });
+            }
         },
         remove() {
             tech.isDilate = false
@@ -1655,7 +1696,7 @@ const tech = {
         frequency: 2,
         frequencyDefault: 2,
         allowed() {
-            return tech.isStunField || tech.oneSuperBall || tech.isCloakStun || tech.isOrbitBotUpgrade || tech.isStun
+            return tech.stunField || tech.oneSuperBall || tech.isCloakStun || tech.isOrbitBotUpgrade || tech.isStun
         },
         requires: "a stun effect",
         effect() {
@@ -2748,7 +2789,7 @@ const tech = {
         frequency: 2,
         frequencyDefault: 2,
         allowed() {
-            return (tech.blockDamage > 0.075 || tech.isPrinter || tech.isTokamak) && m.fieldMode !== 8 && m.fieldMode !== 9
+            return (tech.blockDamage > 0.075 || tech.isPrinter || tech.isTokamak || tech.isThrowBlocks) && m.fieldMode !== 8 && m.fieldMode !== 9
         },
         requires: "mass driver, additive manufacturing, tokamak, not wormhole, pilot wave",
         effect() {
@@ -2767,7 +2808,7 @@ const tech = {
         frequency: 3,
         frequencyDefault: 3,
         allowed() {
-            return (tech.blockDamage > 0.075 || tech.isPrinter) && m.fieldMode !== 8 && m.fieldMode !== 9 && !tech.isTokamak
+            return (tech.blockDamage > 0.075 || tech.isPrinter || tech.isThrowBlocks) && m.fieldMode !== 8 && m.fieldMode !== 9 && !tech.isTokamak
         },
         requires: "mass driver, additive manufacturing, not pilot wave, tokamak, wormhole",
         effect() {
@@ -2785,7 +2826,7 @@ const tech = {
         frequency: 3,
         frequencyDefault: 3,
         allowed() {
-            return (tech.blockDamage > 0.075 || tech.isPrinter) && m.fieldUpgrades[m.fieldMode].name !== "pilot wave" && m.fieldUpgrades[m.fieldMode].name !== "wormhole" && !tech.isTokamak
+            return (tech.blockDamage > 0.075 || tech.isPrinter || tech.isThrowBlocks) && m.fieldUpgrades[m.fieldMode].name !== "pilot wave" && m.fieldUpgrades[m.fieldMode].name !== "wormhole" && !tech.isTokamak
         },
         requires: "mass driver, additive manufacturing, not pilot wave, tokamak, wormhole",
         effect() {
@@ -2803,7 +2844,7 @@ const tech = {
         frequency: 3,
         frequencyDefault: 3,
         allowed() {
-            return (tech.blockDamage > 0.075 || tech.isPrinter)
+            return (tech.blockDamage > 0.075 || tech.isPrinter || tech.isThrowBlocks)
         },
         requires: "mass driver, additive manufacturing",
         effect() {
@@ -2823,7 +2864,7 @@ const tech = {
         frequency: 3,
         frequencyDefault: 3,
         allowed() {
-            return (tech.blockDamage > 0.075 || tech.isPrinter) && !tech.isTokamak
+            return (tech.blockDamage > 0.075 || tech.isPrinter || tech.isThrowBlocks) && !tech.isTokamak
         },
         requires: "mass driver, additive manufacturing, not pilot wave, tokamak",
         effect() {
@@ -3601,7 +3642,7 @@ const tech = {
     {
         name: "ergodicity",
         descriptionFunction() {
-            return `<strong>0.5x</strong> <strong class='color-h'>healing</strong> from ${powerUps.orb.heal()}<br><strong>1.7x</strong> <strong class='color-d'>damage</strong>`
+            return `${powerUps.orb.heal()} give <strong>0.5x</strong> ${powerUps.healGiveMaxEnergy ? "max <strong class='color-f'>energy</strong>" : "<strong class='color-h'>healing</strong>"} ${tech.isCasimir ? ` and ${powerUps.orb.Casimir(1)} give <strong>0.5x</strong> effect` : ""}<br><strong>1.7x</strong> <strong class='color-d'>damage</strong>`
         },
         maxCount: 1,
         count: 0,
@@ -3649,7 +3690,7 @@ const tech = {
         allowed() {
             return !tech.isPerfectBrake
         },
-        requires: "not eddy current brake",
+        requires: "not eddy current",
         effect() {
             tech.isHealBrake = true;
         },
@@ -3660,7 +3701,7 @@ const tech = {
     {
         name: "adiabatic healing",
         descriptionFunction() {
-            return `<strong>2x</strong> <strong class='color-h'>healing</strong> from ${powerUps.orb.heal()}<br><strong>+4%</strong> chance for <strong class='color-junk'>JUNK</strong> <strong class='color-choice'><span>ch</span><span>oi</span><span>ces</span></strong>`
+            return `${powerUps.orb.heal()} give <strong>2x</strong> ${powerUps.healGiveMaxEnergy ? "max <strong class='color-f'>energy</strong>" : "<strong class='color-h'>healing</strong>"} ${tech.isCasimir ? ` and ${powerUps.orb.Casimir(1)} give <strong>2x</strong> effect` : ""}<br><strong>+4%</strong> chance for <strong class='color-junk'>JUNK</strong> <strong class='color-choice'><span>ch</span><span>oi</span><span>ces</span></strong>`
         },
         maxCount: 3,
         count: 0,
@@ -3724,7 +3765,7 @@ const tech = {
     {
         name: "accretion",
         descriptionFunction() {
-            return `${powerUps.orb.heal(1)} follow you, even between levels<br><strong>+4%</strong> chance to <strong class='color-dup'>duplicate</strong> new <strong>power ups</strong>`
+            return `${powerUps.orb.heal(1)} follow you, even between levels<br><strong>+5%</strong> chance to <strong class='color-dup'>duplicate</strong> new <strong>power ups</strong>`
         },
         maxCount: 1,
         count: 0,
@@ -3748,7 +3789,7 @@ const tech = {
     {
         name: "accretion disk",
         descriptionFunction() {
-            return `<strong>1.07x</strong> <strong class='color-d'>damage</strong> per <strong>power up</strong> on this <strong>level</strong><br><strong>+5%</strong> chance for <strong class='color-junk'>JUNK</strong> <strong class='color-choice'><span>ch</span><span>oi</span><span>ces</span></strong> <em style ="float: right;">(${(1 + 0.07 * powerUp.length).toFixed(2)}x)</em>`
+            return `<strong>1.08x</strong> <strong class='color-d'>damage</strong> per <strong>power up</strong> on this <strong>level</strong><br><strong>+5%</strong> chance for <strong class='color-junk'>JUNK</strong> <strong class='color-choice'><span>ch</span><span>oi</span><span>ces</span></strong> <em style ="float: right;">(${(1 + 0.08 * powerUp.length).toFixed(2)}x)</em>`
         },
         maxCount: 1,
         count: 0,
@@ -4589,7 +4630,7 @@ const tech = {
     {
         name: "mass production",
         descriptionFunction() {
-            return `<strong>+3%</strong> chance to <strong class='color-dup'>duplicate</strong> new <strong>power ups</strong><br>${powerUps.orb.tech()} gain <strong class='color-choice'><span>ch</span><span>oi</span><span>ces</span></strong> to spawn ${powerUps.orb.ammo(1)},&nbsp; ${powerUps.orb.heal(1)}, &nbsp;and&nbsp; ${powerUps.orb.research(1)}`
+            return `<strong>+3%</strong> chance to <strong class='color-dup'>duplicate</strong> new <strong>power ups</strong><br>${powerUps.orb.tech()} gain <strong class='color-choice'><span>ch</span><span>oi</span><span>ces</span></strong> to spawn ${powerUps.orb.coupling(1)},&nbsp; ${powerUps.orb.ammo(1)},&nbsp; ${powerUps.orb.heal(1)}, &nbsp;${powerUps.orb.Casimir(1)}, &nbsp;and&nbsp; ${powerUps.orb.research(1)}`
         },
         maxCount: 1,
         count: 0,
@@ -4605,7 +4646,6 @@ const tech = {
         remove() {
             tech.isMassProduction = false
             if (this.count) powerUps.setPowerUpMode(); //needed after adjusting duplication chance
-
         }
     },
     {
@@ -4680,6 +4720,7 @@ const tech = {
         count: 0,
         frequency: 1,
         frequencyDefault: 1,
+        isMassProduction: true,
         isInstant: true,
         allowed() {
             return true
@@ -4692,6 +4733,24 @@ const tech = {
         remove() {
             // if (this.count) m.couplingChange(-this.count * 10)
         }
+    },
+    {
+        name: "energy",
+        descriptionFunction() {
+            return `spawn ${powerUps.orb.Casimir(6)}<br><em>${powerUps.Casimir.descriptionFunction()}</em>`
+        },
+        maxCount: 9,
+        count: 0,
+        frequency: 1,
+        frequencyDefault: 1,
+        isInstant: true,
+        isMassProduction: true,
+        allowed: () => true,
+        requires: "",
+        effect() {
+            powerUps.spawnDelay("Casimir", 6)
+        },
+        remove() { }
     },
     {
         name: "quintessence",
@@ -4760,7 +4819,7 @@ const tech = {
     {
         name: "virtual particles",
         descriptionFunction() {
-            return `<strong>17%</strong> chance after mobs <strong>die</strong> to spawn ${powerUps.orb.coupling(1)}<br><em>${m.couplingDescription(1)} per ${powerUps.orb.coupling(1)}</em>`
+            return `<strong>15%</strong> chance after mobs <strong>die</strong> to spawn ${powerUps.orb.coupling(1)}<br><em>${m.couplingDescription(1)} per ${powerUps.orb.coupling(1)}</em>`
             // return `<strong>17%</strong> chance after mobs <strong>die</strong> to spawn ${powerUps.orb.coupling(1)} that each give <strong>+0.1</strong> <strong class='color-coupling'>coupling</strong>` //<br>${m.couplingDescription(1)} ${m.fieldMode === 0 ? "" : "per <strong class='color-coupling'>coupling</strong>"}
         },
         maxCount: 1,
@@ -4774,6 +4833,85 @@ const tech = {
         },
         remove() {
             tech.isCouplingPowerUps = false
+        }
+    },
+    {
+        name: "Casimir effect",
+        descriptionFunction() {
+            return `<strong>10%</strong> chance after mobs <strong>die</strong> to spawn ${powerUps.orb.Casimir(1)}<br><em>${powerUps.Casimir.descriptionFunction()}</em>`
+        },
+        maxCount: 1,
+        count: 0,
+        frequency: 1,
+        frequencyDefault: 1,
+        allowed: () => true,
+        requires: "",
+        effect() {
+            tech.isCasimir = true //about 20-30 mobs per level so at 17% that's about 4*5 max energy per level 
+        },
+        remove() {
+            tech.isCasimir = false
+        }
+    },
+    {
+        name: "Lie group",
+        descriptionFunction() {
+            const resultsArray = tech.mergedList.map(item => powerUps.orb[item](1));
+            const resultString = resultsArray.join(", ");
+            return `randomly merge future ${powerUps.orb.coupling(1)},&nbsp; ${powerUps.orb.ammo(1)}, ${powerUps.orb.boost(1)}, &nbsp;or&nbsp; ${powerUps.orb.research(1)} into ${powerUps.orb.Casimir(1)}<br>${powerUps.orb.Casimir(1)} gain their effect <em style ="float: right;">(merged: ${resultString})</em>`
+        },
+        maxCount: 4,
+        count: 0,
+        frequency: 3,
+        frequencyDefault: 3,
+        allowed: () => tech.isCasimir && !tech.isEnergyHealth,
+        requires: "Casimir effect, not mass-energy",
+        list: ["coupling", "boost", "research", "ammo"],
+        effect() {
+            const pick1 = this.list[Math.floor(this.list.length * Math.random())]
+            this.list = this.list.filter(item => item !== pick1)
+            tech.mergedList.push(pick1)
+            simulation.inGameConsole(`${powerUps.orb[pick1](1)} merged into ${powerUps.orb.Casimir(1)} <em>//from Lie group</em>`);
+            // console.log(tech.mergedList, this.list, pick1)
+        },
+        remove() {
+            tech.mergedList = []
+        }
+    },
+    {
+        name: "van der Waals force",
+        descriptionFunction() {
+            return `${powerUps.orb.Casimir(1)} will also give <strong>10</strong> maximum <strong class='color-h'>health</strong><br><em>${powerUps.Casimir.descriptionFunction()}</em>`
+        },
+        maxCount: 1,
+        count: 0,
+        frequency: 3,
+        frequencyDefault: 3,
+        allowed: () => tech.isCasimir,
+        requires: "Casimir effect",
+        effect() {
+            tech.isCasimirHealth = true //about 20-30 mobs per level so at 17% that's about 4*5 max energy per level 
+        },
+        remove() {
+            tech.isCasimirHealth = false
+        }
+    },
+    {
+        name: "vacuum energy",
+        descriptionFunction() {
+            return `after using ${powerUps.orb.coupling(1)},&nbsp; ${powerUps.orb.ammo(1)},&nbsp; ${powerUps.orb.heal(1)}, &nbsp;${powerUps.orb.Casimir(1)}, &nbsp;or&nbsp; ${powerUps.orb.research(1)}<br>randomly set your <strong class='color-f'>energy</strong> to <strong>0</strong> or <strong>${(100 * m.maxEnergy).toFixed(0)}`
+        },
+        maxCount: 1,
+        count: 0,
+        frequency: 3,
+        frequencyDefault: 3,
+        allowed: () => tech.isCasimir,
+        requires: "Casimir effect",
+        effect() {
+            tech.isCasimirRandom = true //about 20-30 mobs per level so at 17% that's about 4*5 max energy per level 
+        },
+        remove() {
+            tech.isCasimirRandom = false
         }
     },
     {
@@ -4983,9 +5121,9 @@ const tech = {
         frequency: 1,
         frequencyDefault: 1,
         allowed() {
-            return true
+            return !localSettings.isHideHUD
         },
-        requires: "",
+        requires: "not performance mode",
         effect() {
 
             // class Scarf {
@@ -5261,7 +5399,7 @@ const tech = {
                     if (!m.isTimeDilated && !(tech.isIntangible && m.isCloak)) {
                         for (let i = 1; i < this.segments.length - 1; i++) {
                             let hit = Matter.Query.ray(mob, this.segments[i], this.segments[i + 1])
-                            if (hit.length && !hit[0].body.isUnblockable && hit[0].body.collisionFilter.mask > 0) {
+                            if (hit.length && (!hit[0].body.isUnblockable || hit[0].body.shield) && hit[0].body.collisionFilter.mask > 0) {
                                 if (tech.isChitin) { //tail segments past the collisions point are made into worms
                                     hit = hit[0].body
                                     for (let j = Math.max(1, i); j < this.segments.length - 1; j++) {
@@ -5360,6 +5498,7 @@ const tech = {
                                 }
                                 this.segments.length = Math.max(2, i - 1)
                             }
+                            // if (hit.length) console.log(hit[0].body)
                         }
                     }
                 }
@@ -5751,7 +5890,7 @@ const tech = {
     {
         name: "paradigm shift",
         descriptionFunction() {
-            return `when <strong>paused</strong> clicking your ${powerUps.orb.tech()} <span class='color-remove'>ejects</span> them<br>costs <strong>${(tech.pauseEjectTech * m.defense()).toFixed(1)}</strong> ${tech.isEnergyHealth ? "<strong class='color-f'>energy</strong>" : "<strong class='color-h'>health</strong>"} <em style ="float: right;">(cost grows by 2x each use)</em>`
+            return `when <strong>paused</strong> clicking your ${powerUps.orb.tech()} <span class='color-remove'>ejects</span> them<br>costs <strong>${(tech.pauseEjectTech).toFixed(1)}</strong> ${tech.isEnergyHealth ? "<strong class='color-f'>energy</strong>" : "<strong class='color-h'>health</strong>"} <em style ="float: right;">(cost grows by 2x each use)</em>`
         },
         maxCount: 1,
         count: 0,
@@ -5970,7 +6109,7 @@ const tech = {
     },
     {
         name: "needle gun",
-        description: "<strong>nail gun</strong> and <strong>shotgun</strong> fire piercing <strong>needles</strong>",
+        description: `<strong>nail gun</strong> and <strong>shotgun</strong> fire piercing <strong>needles</strong><br><em style = 'float: right;'>(3 needles per ammo, 1/3 less ammo)</em>`,
         isGunTech: true,
         maxCount: 1,
         count: 0,
@@ -6553,7 +6692,7 @@ const tech = {
         allowed() {
             return (tech.haveGunCheck("shotgun") && !tech.isNailShot && !tech.isIceShot && !tech.isLaserShot && !tech.isRivets && !tech.isFoamShot && !tech.isSporeWorm && !tech.isSporeFlea && !tech.isNeedles) || ((tech.haveGunCheck("super balls") || tech.isSuperMine) && !tech.isSuperBounce && !tech.isFoamBall && !tech.isSlime) || (tech.isRivets && !tech.isNailCrit) || (m.fieldMode === 4 && simulation.molecularMode === 3) || (tech.haveGunCheck("drones") && !tech.isForeverDrones && !tech.isDroneRadioactive && !tech.isDroneTeleport)
         },
-        requires: "shotgun, super balls, rivets, drones, not irradiated drones, burst drones, polyurethane, Zectron, photonic crystal",
+        requires: "shotgun, super balls, rivets, drones, not irradiated drones, burst drones, polyurethane, slime, photonic crystal",
         effect() {
             tech.isIncendiary = true
         },
@@ -6602,7 +6741,7 @@ const tech = {
     {
         name: "borax",
         descriptionFunction() {
-            return `after <strong>Zectron</strong> removes a <strong>super ball</strong><br>gain <strong>1</strong> <strong class='color-ammo'>ammo</strong> for <strong>super balls</strong>`
+            return `after <strong>slime</strong> removes a <strong>super ball</strong><br>gain <strong>1</strong> <strong class='color-ammo'>ammo</strong> for <strong>super balls</strong>`
         },
         isGunTech: true,
         maxCount: 1,
@@ -6742,7 +6881,7 @@ const tech = {
         frequency: 2,
         frequencyDefault: 2,
         allowed() {
-            return tech.haveGunCheck("wave") || tech.isSoundBotUpgrade
+            return tech.haveGunCheck("wave") || tech.isSoundBotUpgrade || (tech.isFirstHarmonic)
         },
         requires: "wave",
         effect() {
@@ -6763,7 +6902,7 @@ const tech = {
         frequency: 2,
         frequencyDefault: 2,
         allowed() {
-            return tech.haveGunCheck("wave") || tech.isSoundBotUpgrade
+            return tech.haveGunCheck("wave") || tech.isSoundBotUpgrade || (tech.isFirstHarmonic)
         },
         requires: "wave",
         effect() {
@@ -6889,7 +7028,7 @@ const tech = {
         frequency: 2,
         frequencyDefault: 2,
         allowed() {
-            return (tech.isLongitudinal && tech.haveGunCheck("wave")) || tech.isSoundBotUpgrade
+            return (tech.isLongitudinal && tech.haveGunCheck("wave")) || tech.isSoundBotUpgrade || (tech.isFirstHarmonic)
         },
         requires: "wave, phonon",
         effect() {
@@ -6908,7 +7047,7 @@ const tech = {
         frequency: 2,
         frequencyDefault: 2,
         allowed() {
-            return (tech.isLongitudinal && tech.haveGunCheck("wave")) || tech.isSoundBotUpgrade
+            return (tech.isLongitudinal && tech.haveGunCheck("wave")) || tech.isSoundBotUpgrade || (tech.isFirstHarmonic)
         },
         requires: "wave, phonon",
         effect() {
@@ -7150,7 +7289,7 @@ const tech = {
         frequency: 1,
         frequencyDefault: 1,
         allowed() {
-            return !tech.isExplodeRadio && ((tech.haveGunCheck("harpoon") && !tech.isFoamBall) || (tech.haveGunCheck("grenades") && !tech.isNeutronBomb) || tech.haveGunCheck("missiles") || (m.fieldMode === 4 && simulation.molecularMode === 1) || tech.missileBotCount || tech.isRivets || tech.blockDamage > 0.075 || tech.isHookDefense || tech.isExplodeContact)
+            return !tech.isExplodeRadio && ((tech.haveGunCheck("harpoon") && !tech.isFoamBall) || (tech.haveGunCheck("grenades") && !tech.isNeutronBomb) || tech.haveGunCheck("missiles") || (m.fieldMode === 4 && simulation.molecularMode === 1) || tech.missileBotCount || tech.isRivets || tech.blockDamage > 0.075 || tech.isThrowBlocks || tech.isHookDefense || tech.isExplodeContact)
         },
         requires: "grenades, missiles, rivets, harpoon, or mass driver, not iridium-192, not polyurethane foam",
         effect() {
@@ -7439,7 +7578,7 @@ const tech = {
     },
     {
         name: "neutron bomb",
-        description: "<strong>grenades</strong> are <strong class='color-p'>irradiated</strong> with <strong class='color-p'>Cf-252</strong><br>does <strong class='color-p'>radioactive</strong> <strong class='color-d'>damage</strong> over time",
+        description: "<strong>grenades</strong> are <strong class='color-p'>irradiated</strong> with <strong class='color-p'>Cf-252</strong><br>does <strong class='color-p'>area</strong> <strong class='color-d'>damage</strong> to mobs and you",
         isGunTech: true,
         maxCount: 1,
         count: 0,
@@ -8100,7 +8239,7 @@ const tech = {
     {
         name: "irradiated drones",
         link: `<a target="_blank" href='https://en.wikipedia.org/wiki/Irradiation' class="link">irradiated drones</a>`,
-        description: `the space around <strong>drones</strong> is <strong class='color-p'>irradiated</strong><br><strong>0.25x</strong> <strong>drones</strong> per ${powerUps.orb.ammo()} and <strong class='color-f'>energy</strong>`,
+        description: `<strong>drones</strong> do <strong class='color-p'>area</strong> <strong class='color-d'>damage</strong> to mobs and you<br><strong>0.25x</strong> <strong>drones</strong> per ${powerUps.orb.ammo()} or <strong class='color-print'>printed</strong>`,
         isGunTech: true,
         maxCount: 1,
         count: 0,
@@ -8202,7 +8341,7 @@ const tech = {
         allowed() {
             return (tech.haveGunCheck("foam") || tech.isFoamBotUpgrade || tech.isFoamShot || tech.isFoamBall || tech.isFoamMine) || (tech.haveGunCheck("wave") && !tech.is360Longitudinal) || (tech.haveGunCheck("super balls") && !tech.isSlime) || tech.isSoundBotUpgrade
         },
-        requires: "foam, wave, super balls, not isotropic, Zectron",
+        requires: "foam, wave, super balls, not isotropic, slime",
         effect() {
             tech.isBulletTeleport = true
         },
@@ -8429,7 +8568,7 @@ const tech = {
         frequency: 2,
         frequencyDefault: 2,
         allowed() {
-            return tech.haveGunCheck("harpoon") && !tech.isFilament && !tech.isHarpoonPowerUp && !tech.isBoostReplaceAmmo && !tech.isBreakHarpoon
+            return tech.haveGunCheck("harpoon") && !tech.isUHMWPE && !tech.isHarpoonPowerUp && !tech.isBoostReplaceAmmo && !tech.isBreakHarpoon
         },
         requires: "harpoon, not UHMWPE, induction furnace, quasiparticles, wear",
         ammoBonus: 9,
@@ -8696,10 +8835,10 @@ const tech = {
         },
         requires: "harpoon, not railgun",
         effect() {
-            tech.isFilament = true;
+            tech.isUHMWPE = true;
         },
         remove() {
-            tech.isFilament = false;
+            tech.isUHMWPE = false;
         }
     },
     {
@@ -9359,7 +9498,7 @@ const tech = {
     },
     {
         name: "flux pinning",
-        description: `mobs <strong>deflected</strong> by your ${powerUps.orb.field()}<br>are <strong>stunned</strong> for <strong>4</strong> seconds`,
+        description: `<strong>deflected</strong> mobs are <strong>stunned</strong> for <strong>4</strong> seconds`,
         isFieldTech: true,
         maxCount: 9,
         count: 0,
@@ -9370,15 +9509,34 @@ const tech = {
         },
         requires: "a field that can block",
         effect() {
-            tech.isStunField += 240;
+            tech.stunField += 240;
         },
         remove() {
-            tech.isStunField = 0;
+            tech.stunField = 0;
         }
     },
     {
-        name: "eddy current brake",
-        description: "perfect diamagnetism <strong class='color-s'>slows</strong> nearby mobs<br>effect <strong>radius</strong> scales with stored <strong class='color-f'>energy</strong>",
+        name: "paramagnetism",
+        description: `activate <strong>perfect diamagnetism</strong> ${powerUps.orb.field()}<br>and hold <strong>down</strong> to attract distant <strong class='color-block'>blocks</strong>`, // and <strong>release</strong> to launch
+        isFieldTech: true,
+        maxCount: 1,
+        count: 0,
+        frequency: 2,
+        frequencyDefault: 2,
+        allowed() {
+            return m.fieldMode === 2
+        },
+        requires: "perfect diamagnetism",
+        effect() {
+            tech.isThrowBlocks = true;
+        },
+        remove() {
+            tech.isThrowBlocks = false;
+        }
+    },
+    {
+        name: "eddy current",
+        description: "<strong>perfect diamagnetism</strong> pushes <strong>you</strong> and it<br><strong class='color-s'>slows</strong> nearby mobs, <strong>radius</strong> scales with <strong class='color-f'>energy</strong>",
         isFieldTech: true,
         maxCount: 1,
         count: 0,
@@ -9717,15 +9875,15 @@ const tech = {
         frequency: 2,
         frequencyDefault: 2,
         allowed() {
-            return m.fieldMode === 4 || m.fieldMode === 1 || m.fieldMode === 8
+            return (m.fieldMode === 4 || m.fieldMode === 1 || m.fieldMode === 8) && !localSettings.isHideHUD
         },
-        requires: "molecular assembler, pilot wave, standing wave",
+        requires: "molecular assembler, pilot wave, standing wave, not performance mode",
         effect() {
-            tech.isMassEnergy = true // used in m.grabPowerUp
+            tech.isPairProduction = true // used in m.grabPowerUp
             m.energy += 2 * level.isReducedRegen
         },
         remove() {
-            tech.isMassEnergy = false;
+            tech.isPairProduction = false;
         }
     },
     {
@@ -10633,16 +10791,16 @@ const tech = {
     },
     {
         name: "reel",
-        description: "<strong>5x</strong> <strong class='color-block'>block</strong> collision <strong class='color-d'>damage</strong><br>up to <strong>+100</strong> <strong class='color-f'>energy</strong> after reeling in <strong class='color-block'>blocks</strong>",
+        description: "<strong>5x</strong> <strong class='color-block'>block</strong> collision <strong class='color-d'>damage</strong><br>up to <strong>+100</strong> <strong class='color-f'>energy</strong> after pulling in <strong class='color-block'>blocks</strong>",
         isFieldTech: true,
         maxCount: 1,
         count: 0,
-        frequency: 1,
-        frequencyDefault: 1,
+        frequency: 2,
+        frequencyDefault: 2,
         allowed() {
-            return m.fieldMode === 10 && !tech.isTokamak && tech.blockDamage === 0.075 && !tech.hookNails
+            return (m.fieldMode === 10 || tech.isThrowBlocks) && !tech.isTokamak && tech.blockDamage === 0.075 && !tech.hookNails
         },
-        requires: "grappling hook, not mass driver, swarf, tokamak",
+        requires: "grappling hook, paramagnetism, not mass driver, swarf, tokamak",
         effect() {
             tech.blockDamage = 0.375
             tech.isReel = true
@@ -13592,403 +13750,410 @@ const tech = {
     }
     ],
     //variables use for gun tech upgrades
-    fireRate: 1, //initializes to 1
-    bulletSize: null,
-    energySiphon: null,
-    healSpawn: null,
-    crouchAmmoCount: null,
-    bulletsLastLonger: null,
-    isImmortal: null,
-    sporesOnDeath: null,
-    isImmuneExplosion: null,
-    isExplodeMob: null,
-    isDroneOnDamage: null,
-    isAcidDmg: null,
-    isAnnihilation: null,
-    largerHeals: null,
-    isCrit: null,
-    isLowHealthDmg: null,
-    isLowHealthDefense: null,
-    isLowHealthFireRate: null,
-    isFarAwayDmg: null,
-    isFirstDer: null,
-    isMassEnergy: null,
-    extraChoices: null,
-    laserBotCount: null,
-    dynamoBotCount: null,
-    nailBotCount: null,
-    foamBotCount: null,
-    soundBotCount: null,
-    boomBotCount: null,
-    plasmaBotCount: null,
-    missileBotCount: null,
-    orbitBotCount: null,
-    deflectDmg: null,
-    isBlockRadiation: null,
-    isPiezo: null,
-    isFastDrones: null,
-    oneSuperBall: null,
-    laserReflections: null,
-    laserDamage: null,
-    isAmmoFromHealth: null,
-    mobSpawnWithHealth: null,
-    isEnergyRecovery: null,
-    isHealthRecovery: null,
-    isEnergyLoss: null,
-    isDeathAvoid: null,
-    isDeathAvoidedThisLevel: null,
-    isPlasmaRange: null,
-    isFreezeMobs: null,
-    isIceCrystals: null,
-    blockDamage: null,
-    isBlockStun: null,
-    isStunField: null,
-    isHarmDamage: null,
-    isVacuumBomb: null,
-    isFrequentist: null,
-    fragments: null,
-    energyDamage: null,
-    botSpawner: null,
-    isBotSpawnerReset: null,
-    isSporeFollow: null,
-    isNailRadiation: null,
-    isEnergyHealth: null,
-    isStun: null,
-    restDamage: null,
-    isRPG: null,
-    missileCount: null,
-    isDeterminism: null,
-    isSuperDeterminism: null,
-    isHarmReduce: null,
-    nailsDeathMob: null,
-    isSlowFPS: null,
-    isNeutronStun: null,
-    isAnsatz: null,
-    isDamageFromBulletCount: null,
-    laserDrain: null,
-    isNailShot: null,
-    slowFire: null,
-    fastTime: null,
-    fastTimeFire: null,
-    fastTimeJump: null,
-    isFastRadiation: null,
-    isAmmoForGun: null,
-    isRapidPulse: null,
-    isSporeFreeze: null,
-    isShotgunRecoil: null,
-    isHealLowHealth: null,
-    isAoESlow: null,
-    isHarmArmor: null,
-    isTurret: null,
-    isRerollDamage: null,
-    isHarmFreeze: null,
-    isBotArmor: null,
-    isRerollHaste: null,
-    researchHaste: null,
-    isMineDrop: null,
-    isRerollBots: null,
-    isNailBotUpgrade: null,
-    isFoamBotUpgrade: null,
-    isSoundBotUpgrade: null,
-    isLaserBotUpgrade: null,
-    isBoomBotUpgrade: null,
-    isOrbitBotUpgrade: null,
-    isDroneGrab: null,
-    isOneGun: null,
-    isDamageForGuns: null,
-    isGunCycle: null,
-    isFastFoam: null,
-    isSporeGrowth: null,
-    isStimulatedEmission: null,
-    // nailGun: null,
-    nailInstantFireRate: null,
-    isCapacitor: null,
-    isEnergyNoAmmo: null,
-    // isFreezeHarmImmune: null,
-    isSmallExplosion: null,
-    isExplosionHarm: null,
-    extraMaxHealth: null,
-    // bonusHealth: null,
-    isIntangible: null,
-    isCloakStun: null,
-    bonusEnergy: null,
-    // healGiveMaxEnergy: null,
-    healMaxEnergyBonus: 0, //not null
-    slowFireDamage: null,
-    isNoFireDefense: null,
-    isNoFireDamage: null,
-    duplicateChance: null,
-    beamSplitter: null,
-    iceEnergy: null,
-    isPerfectBrake: null,
-    explosiveRadius: null,
-    // isWormholeEnergy: null,
-    isWormholeDamage: null,
-    isNailCrit: null,
-    isFlechetteExplode: null,
-    isWormholeWorms: null,
-    isWormHoleBullets: null,
-    isWideLaser: null,
-    wideLaser: null,
-    isPulseLaser: null,
-    isRadioactive: null,
-    radioactiveDamage: null,
-    isRailEnergy: null,
-    isMineSentry: null,
-    isIncendiary: null,
-    overfillDrain: null,
-    isNeutronSlow: null,
-    // isRailAreaDamage: null,
-    historyLaser: null,
-    isSpeedHarm: null,
-    isSpeedDamage: null,
-    speedAdded: null,
-    isTimeSkip: null,
-    isCancelDuplication: null,
-    duplication: null,
-    isCancelRerolls: null,
-    isCancelTech: null,
-    cancelTechCount: null,
-    isBotDamage: null,
-    isBanish: null,
-    isRetain: null,
-    isMaxEnergyTech: null,
-    isLowEnergyDamage: null,
-    isRewindBot: null,
-    isRewindGrenade: null,
-    isExtruder: null,
-    isEndLevelPowerUp: null,
-    isMissileBig: null,
-    isMissileBiggest: null,
-    isMissileFast: null,
-    isMissile2ndExplode: null,
-    isLaserMine: null,
-    isFoamMine: null,
-    isAmmoFoamSize: null,
-    isIceIX: null,
-    isDupDamage: null,
-    isDupEnergy: null,
-    isFireRateForGuns: null,
-    cyclicImmunity: null,
-    isTechDamage: null,
-    isRestHarm: null,
-    isFireMoveLock: null,
-    isRivets: null,
-    isNeedles: null,
-    isExplodeRadio: null,
-    isPauseSwitchField: null,
-    isPauseEjectTech: null,
-    pauseEjectTech: null,
-    isShieldPierce: null,
-    isDuplicateMobs: null,
-    isDynamoBotUpgrade: null,
-    isBlockPowerUps: null,
-    isHarmReduceNoKill: null,
-    isSwitchReality: null,
-    isResearchReality: null,
-    isAnthropicDamage: null,
-    isMetaAnalysis: null,
-    isFoamAttract: null,
-    droneCycleReduction: null,
-    droneEnergyReduction: null,
-    isHalfHeals: null,
-    isAlwaysFire: null,
-    isDroneRespawn: null,
-    deathSpawns: null,
-    isMobBlockFling: null,
-    isPhaseVelocity: null,
-    waveBeamSpeed: null,
-    wavePacketAmplitude: null,
-    isCollisionRealitySwitch: null,
-    iceIXOnDeath: null,
-    wimpCount: null,
-    isAddBlockMass: null,
-    isDarkMatter: null,
-    isHarmDarkMatter: null,
-    isMoveDarkMatter: null,
-    isNotDarkMatter: null,
-    isSneakAttack: null,
-    isFallingDamage: null,
-    harmonics: null,
-    isStandingWaveExpand: null,
-    isTokamak: null,
-    isTokamakHeal: null,
-    tokamakHealCount: null,
-    isTokamakFly: null,
-    deflectEnergy: null,
-    superBallDelay: null,
-    isBlockExplode: null,
-    isOverHeal: null,
-    isDroneRadioactive: null,
-    droneRadioDamage: null,
-    isDroneTeleport: null,
-    isDroneFastLook: null,
-    isBulletTeleport: null,
-    isJunkResearch: null,
-    laserColor: null,
-    laserColorAlpha: null,
-    isLongitudinal: null,
-    is360Longitudinal: null,
-    isShotgunReversed: null,
-    fieldDuplicate: null,
-    isCloakingDamage: null,
-    harmonicEnergy: null,
-    isFieldHarmReduction: null,
-    isAnthropicTech: null,
-    isSporeWorm: null,
-    isSporeFlea: null,
-    isFoamShot: null,
-    isIceShot: null,
-    isBlockRestitution: null,
-    isZeno: null,
-    isFieldFree: null,
-    isExtraGunField: null,
-    isBigField: null,
-    isSmartRadius: null,
-    isFilament: null,
-    isLargeHarpoon: null,
-    extraHarpoons: null,
-    ammoCap: null,
-    isHarpoonPowerUp: null,
-    harpoonDensity: null,
-    isAddRemoveMaxHealth: null,
-    cloakDuplication: null,
-    extruderRange: null,
-    isForeverDrones: null,
-    nailRecoil: null,
-    baseJumpForce: null,
-    baseFx: null,
-    isNeutronium: null,
-    isFreeWormHole: null,
-    isCrouchRegen: null,
-    isAxion: null,
-    isDarkEnergy: null,
-    isDarkStar: null,
-    isWormholeMapIgnore: null,
-    isLessDamageReduction: null,
-    needleTunnel: null,
-    isBrainstorm: null,
-    isBrainstormActive: null,
-    brainStormDelay: null,
-    wormSize: null,
-    extraSuperBalls: null,
-    isTimeCrystals: null,
-    isGroundState: null,
-    isRailGun: null,
-    isDronesTravel: null,
-    isTechDebt: null,
-    isPlasmaBall: null,
-    plasmaDischarge: null,
-    missileFireCD: null,
-    isBotField: null,
-    isFoamBall: null,
-    isNoDraftPause: null,
-    isFoamPressure: null,
-    foamDamage: null,
-    isClusterExplode: null,
-    isCircleExplode: null,
-    isPetalsExplode: null,
-    isVerlet: null,
-    isIceMaxHealthLoss: null,
-    isIceKill: null,
-    isCritKill: null,
-    isQuantumEraser: null,
-    isPhononBlock: null,
-    isPhononWave: null,
-    isLaserLens: null,
-    laserCrit: null,
-    isSporeColony: null,
-    isExtraBotOption: null,
-    isLastHitDamage: null,
-    isCloakHealLastHit: null,
-    isRicochet: null,
-    isCancelCouple: null,
-    isCouplingPowerUps: null,
-    isBoostPowerUps: null,
-    isBoostReplaceAmmo: null,
-    isInfiniteWaveAmmo: null,
-    isJunkDNA: null,
-    buffedGun: 0,
-    isGunChoice: null,
-    railChargeRate: null,
-    isSlime: null,
-    isZombieMobs: null,
-    isSuperMine: null,
-    sentryAmmo: null,
-    collidePowerUps: null,
-    isDilate: null,
-    isDiaphragm: null,
-    isOffGroundDamage: null,
-    isSuperBounce: null,
-    isDivisor: null,
-    isFoamCavitation: null,
-    isHealAttract: null,
-    isLaserField: null,
-    isHealBrake: null,
-    isMassProduction: null,
-    isPrinter: null,
-    isHookDefense: null,
-    hookNails: null,
-    isHarpoonDefense: null,
-    isReel: null,
-    harpoonPowerUpCycle: null,
-    isHarpoonFullHealth: null,
-    isMobFullHealthCloak: null,
-    isMobLowHealth: null,
-    isDamageCooldown: null,
-    isDamageCooldownTime: null,
-    isPowerUpDamage: null,
-    isExitPrompt: null,
-    isResearchDamage: null,
-    isResearchHeal: null,
-    interestRate: null,
-    isImmunityDamage: null,
-    isMobDeathImmunity: null,
-    isMaxHealthDefense: null,
-    noDefenseSettingDamage: null,
-    isMaxHealthDamage: null,
-    isEjectOld: null,
-    isWiki: null,
-    isStaticBlock: null,
-    isDamageFieldTech: null,
-    isRemineralize: null,
-    mineralDamageReduction: null,
-    isDemineralize: null,
-    mineralDamage: null,
-    negativeMassCost: null,
-    beamCollimator: null,
-    isInPilot: null,
-    isNoPilotCost: null,
-    isPlasmaBoost: null,
-    isControlPlasma: null,
-    energyDefense: null,
-    isNewWormHoleDamage: null,
-    isNoDeath: null,
-    isDeathTech: null,
-    isDeathTechTriggered: null,
-    isRebar: null,
-    isMaul: null,
-    isTargeting: null,
-    isBreakHarpoon: null,
-    isBreakHarpoonGain: null,
-    isExponential: null,
-    isCoyote: null,
-    isNitinol: null,
-    isEndothermic: null,
-    isPrecision: null,
-    isExtraGunTech: null,
-    isExplodeContact: null,
-    isMissileSide: null,
-    isLaserShot: null,
-    isDigitalPet: null,
-    isChatter: null,
-    isLaserGrabPowerUp: null,
-    isBijection: null,
-    wire: null,
-    isChitin: null,
-    isCutTimeStop: null,
-    isLaserWire: null,
-    isMycelium: null,
-    isEigenstate: null,
-    isSlimeAmmo: null,
+    // fireRate: 1, //initializes to 1
+    // bulletSize: null,
+    // energySiphon: null,
+    // healSpawn: null,
+    // crouchAmmoCount: null,
+    // bulletsLastLonger: null,
+    // isImmortal: null,
+    // sporesOnDeath: null,
+    // isImmuneExplosion: null,
+    // isExplodeMob: null,
+    // isDroneOnDamage: null,
+    // isAcidDmg: null,
+    // isAnnihilation: null,
+    // largerHeals: null,
+    // isCrit: null,
+    // isLowHealthDmg: null,
+    // isLowHealthDefense: null,
+    // isLowHealthFireRate: null,
+    // isFarAwayDmg: null,
+    // isFirstDer: null,
+    // isPairProduction: null,
+    // extraChoices: null,
+    // laserBotCount: null,
+    // dynamoBotCount: null,
+    // nailBotCount: null,
+    // foamBotCount: null,
+    // soundBotCount: null,
+    // boomBotCount: null,
+    // plasmaBotCount: null,
+    // missileBotCount: null,
+    // orbitBotCount: null,
+    // deflectDmg: null,
+    // isBlockRadiation: null,
+    // isPiezo: null,
+    // isFastDrones: null,
+    // oneSuperBall: null,
+    // laserReflections: null,
+    // laserDamage: null,
+    // isAmmoFromHealth: null,
+    // mobSpawnWithHealth: null,
+    // isEnergyRecovery: null,
+    // isHealthRecovery: null,
+    // isEnergyLoss: null,
+    // isDeathAvoid: null,
+    // isDeathAvoidedThisLevel: null,
+    // isPlasmaRange: null,
+    // isFreezeMobs: null,
+    // isIceCrystals: null,
+    // blockDamage: null,
+    // isBlockStun: null,
+    // stunField: null,
+    // isHarmDamage: null,
+    // isVacuumBomb: null,
+    // isFrequentist: null,
+    // fragments: null,
+    // energyDamage: null,
+    // botSpawner: null,
+    // isBotSpawnerReset: null,
+    // isSporeFollow: null,
+    // isNailRadiation: null,
+    // isEnergyHealth: null,
+    // isStun: null,
+    // restDamage: null,
+    // isRPG: null,
+    // missileCount: null,
+    // isDeterminism: null,
+    // isSuperDeterminism: null,
+    // isHarmReduce: null,
+    // nailsDeathMob: null,
+    // isSlowFPS: null,
+    // isNeutronStun: null,
+    // isAnsatz: null,
+    // isDamageFromBulletCount: null,
+    // laserDrain: null,
+    // isNailShot: null,
+    // slowFire: null,
+    // fastTime: null,
+    // fastTimeFire: null,
+    // fastTimeJump: null,
+    // isFastRadiation: null,
+    // isAmmoForGun: null,
+    // isRapidPulse: null,
+    // isSporeFreeze: null,
+    // isShotgunRecoil: null,
+    // isHealLowHealth: null,
+    // isAoESlow: null,
+    // isHarmArmor: null,
+    // isTurret: null,
+    // isRerollDamage: null,
+    // isHarmFreeze: null,
+    // isBotArmor: null,
+    // isRerollHaste: null,
+    // researchHaste: null,
+    // isMineDrop: null,
+    // isRerollBots: null,
+    // isNailBotUpgrade: null,
+    // isFoamBotUpgrade: null,
+    // isSoundBotUpgrade: null,
+    // isLaserBotUpgrade: null,
+    // isBoomBotUpgrade: null,
+    // isOrbitBotUpgrade: null,
+    // isDroneGrab: null,
+    // isOneGun: null,
+    // isDamageForGuns: null,
+    // isGunCycle: null,
+    // isFastFoam: null,
+    // isSporeGrowth: null,
+    // isStimulatedEmission: null,
+    // // nailGun: null,
+    // nailInstantFireRate: null,
+    // isCapacitor: null,
+    // isEnergyNoAmmo: null,
+    // // isFreezeHarmImmune: null,
+    // isSmallExplosion: null,
+    // isExplosionHarm: null,
+    // extraMaxHealth: null,
+    // // bonusHealth: null,
+    // isIntangible: null,
+    // isCloakStun: null,
+    // bonusEnergy: null,
+    // // healGiveMaxEnergy: null,
+    // healMaxEnergyBonus: 0, //not null
+    // slowFireDamage: null,
+    // isNoFireDefense: null,
+    // isNoFireDamage: null,
+    // duplicateChance: null,
+    // beamSplitter: null,
+    // iceEnergy: null,
+    // isPerfectBrake: null,
+    // explosiveRadius: null,
+    // // isWormholeEnergy: null,
+    // isWormholeDamage: null,
+    // isNailCrit: null,
+    // isFlechetteExplode: null,
+    // isWormholeWorms: null,
+    // isWormHoleBullets: null,
+    // isWideLaser: null,
+    // wideLaser: null,
+    // isPulseLaser: null,
+    // isRadioactive: null,
+    // radioactiveDamage: null,
+    // isRailEnergy: null,
+    // isMineSentry: null,
+    // isIncendiary: null,
+    // overfillDrain: null,
+    // isNeutronSlow: null,
+    // // isRailAreaDamage: null,
+    // historyLaser: null,
+    // isSpeedHarm: null,
+    // isSpeedDamage: null,
+    // speedAdded: null,
+    // isTimeSkip: null,
+    // isCancelDuplication: null,
+    // duplication: null,
+    // isCancelRerolls: null,
+    // isCancelTech: null,
+    // cancelTechCount: null,
+    // isBotDamage: null,
+    // isBanish: null,
+    // isRetain: null,
+    // isMaxEnergyTech: null,
+    // isLowEnergyDamage: null,
+    // isRewindBot: null,
+    // isRewindGrenade: null,
+    // isExtruder: null,
+    // isEndLevelPowerUp: null,
+    // isMissileBig: null,
+    // isMissileBiggest: null,
+    // isMissileFast: null,
+    // isMissile2ndExplode: null,
+    // isLaserMine: null,
+    // isFoamMine: null,
+    // isAmmoFoamSize: null,
+    // isIceIX: null,
+    // isDupDamage: null,
+    // isDupEnergy: null,
+    // isFireRateForGuns: null,
+    // cyclicImmunity: null,
+    // isTechDamage: null,
+    // isRestHarm: null,
+    // isFireMoveLock: null,
+    // isRivets: null,
+    // isNeedles: null,
+    // isExplodeRadio: null,
+    // isPauseSwitchField: null,
+    // isPauseEjectTech: null,
+    // pauseEjectTech: null,
+    // isShieldPierce: null,
+    // isDuplicateMobs: null,
+    // isDynamoBotUpgrade: null,
+    // isBlockPowerUps: null,
+    // isHarmReduceNoKill: null,
+    // isSwitchReality: null,
+    // isResearchReality: null,
+    // isAnthropicDamage: null,
+    // isMetaAnalysis: null,
+    // isFoamAttract: null,
+    // droneCycleReduction: null,
+    // droneEnergyReduction: null,
+    // isHalfHeals: null,
+    // isAlwaysFire: null,
+    // isDroneRespawn: null,
+    // deathSpawns: null,
+    // isMobBlockFling: null,
+    // isPhaseVelocity: null,
+    // waveBeamSpeed: null,
+    // wavePacketAmplitude: null,
+    // isCollisionRealitySwitch: null,
+    // iceIXOnDeath: null,
+    // wimpCount: null,
+    // isAddBlockMass: null,
+    // isDarkMatter: null,
+    // isHarmDarkMatter: null,
+    // isMoveDarkMatter: null,
+    // isNotDarkMatter: null,
+    // isSneakAttack: null,
+    // isFallingDamage: null,
+    // harmonics: null,
+    // isStandingWaveExpand: null,
+    // isTokamak: null,
+    // isTokamakHeal: null,
+    // tokamakHealCount: null,
+    // isTokamakFly: null,
+    // deflectEnergy: null,
+    // superBallDelay: null,
+    // isBlockExplode: null,
+    // isOverHeal: null,
+    // isDroneRadioactive: null,
+    // droneRadioDamage: null,
+    // isDroneTeleport: null,
+    // isDroneFastLook: null,
+    // isBulletTeleport: null,
+    // isJunkResearch: null,
+    // laserColor: null,
+    // laserColorAlpha: null,
+    // isLongitudinal: null,
+    // is360Longitudinal: null,
+    // isShotgunReversed: null,
+    // fieldDuplicate: null,
+    // isCloakingDamage: null,
+    // harmonicEnergy: null,
+    // isFieldHarmReduction: null,
+    // isAnthropicTech: null,
+    // isSporeWorm: null,
+    // isSporeFlea: null,
+    // isFoamShot: null,
+    // isIceShot: null,
+    // isBlockRestitution: null,
+    // isZeno: null,
+    // isFieldFree: null,
+    // isExtraGunField: null,
+    // isBigField: null,
+    // isSmartRadius: null,
+    // isUHMWPE: null,
+    // isLargeHarpoon: null,
+    // extraHarpoons: null,
+    // ammoCap: null,
+    // isHarpoonPowerUp: null,
+    // harpoonDensity: null,
+    // isAddRemoveMaxHealth: null,
+    // cloakDuplication: null,
+    // extruderRange: null,
+    // isForeverDrones: null,
+    // nailRecoil: null,
+    // baseJumpForce: null,
+    // baseFx: null,
+    // isNeutronium: null,
+    // isFreeWormHole: null,
+    // isCrouchRegen: null,
+    // isAxion: null,
+    // isDarkEnergy: null,
+    // isDarkStar: null,
+    // isWormholeMapIgnore: null,
+    // isLessDamageReduction: null,
+    // needleTunnel: null,
+    // isBrainstorm: null,
+    // isBrainstormActive: null,
+    // brainStormDelay: null,
+    // wormSize: null,
+    // extraSuperBalls: null,
+    // isTimeCrystals: null,
+    // isGroundState: null,
+    // isRailGun: null,
+    // isDronesTravel: null,
+    // isTechDebt: null,
+    // isPlasmaBall: null,
+    // plasmaDischarge: null,
+    // missileFireCD: null,
+    // isBotField: null,
+    // isFoamBall: null,
+    // isNoDraftPause: null,
+    // isFoamPressure: null,
+    // foamDamage: null,
+    // isClusterExplode: null,
+    // isCircleExplode: null,
+    // isPetalsExplode: null,
+    // isVerlet: null,
+    // isIceMaxHealthLoss: null,
+    // isIceKill: null,
+    // isCritKill: null,
+    // isQuantumEraser: null,
+    // isPhononBlock: null,
+    // isPhononWave: null,
+    // isLaserLens: null,
+    // laserCrit: null,
+    // isSporeColony: null,
+    // isExtraBotOption: null,
+    // isLastHitDamage: null,
+    // isCloakHealLastHit: null,
+    // isRicochet: null,
+    // isCancelCouple: null,
+    // isCouplingPowerUps: null,
+    // isBoostPowerUps: null,
+    // isBoostReplaceAmmo: null,
+    // isInfiniteWaveAmmo: null,
+    // isJunkDNA: null,
+    // buffedGun: 0,
+    // isGunChoice: null,
+    // railChargeRate: null,
+    // isSlime: null,
+    // isZombieMobs: null,
+    // isSuperMine: null,
+    // sentryAmmo: null,
+    // collidePowerUps: null,
+    // isDilate: null,
+    // isDiaphragm: null,
+    // isOffGroundDamage: null,
+    // isSuperBounce: null,
+    // isDivisor: null,
+    // isFoamCavitation: null,
+    // isHealAttract: null,
+    // isLaserField: null,
+    // isHealBrake: null,
+    // isMassProduction: null,
+    // isPrinter: null,
+    // isHookDefense: null,
+    // hookNails: null,
+    // isHarpoonDefense: null,
+    // isReel: null,
+    // harpoonPowerUpCycle: null,
+    // isHarpoonFullHealth: null,
+    // isMobFullHealthCloak: null,
+    // isMobLowHealth: null,
+    // isDamageCooldown: null,
+    // isDamageCooldownTime: null,
+    // isPowerUpDamage: null,
+    // isExitPrompt: null,
+    // isResearchDamage: null,
+    // isResearchHeal: null,
+    // interestRate: null,
+    // isImmunityDamage: null,
+    // isMobDeathImmunity: null,
+    // isMaxHealthDefense: null,
+    // noDefenseSettingDamage: null,
+    // isMaxHealthDamage: null,
+    // isEjectOld: null,
+    // isWiki: null,
+    // isStaticBlock: null,
+    // isDamageFieldTech: null,
+    // isRemineralize: null,
+    // mineralDamageReduction: null,
+    // isDemineralize: null,
+    // mineralDamage: null,
+    // negativeMassCost: null,
+    // beamCollimator: null,
+    // isInPilot: null,
+    // isNoPilotCost: null,
+    // isPlasmaBoost: null,
+    // isControlPlasma: null,
+    // energyDefense: null,
+    // isNewWormHoleDamage: null,
+    // isNoDeath: null,
+    // isDeathTech: null,
+    // isDeathTechTriggered: null,
+    // isRebar: null,
+    // isMaul: null,
+    // isTargeting: null,
+    // isBreakHarpoon: null,
+    // isBreakHarpoonGain: null,
+    // isExponential: null,
+    // isCoyote: null,
+    // isNitinol: null,
+    // isEndothermic: null,
+    // isPrecision: null,
+    // isExtraGunTech: null,
+    // isExplodeContact: null,
+    // isMissileSide: null,
+    // isLaserShot: null,
+    // isDigitalPet: null,
+    // isChatter: null,
+    // isLaserGrabPowerUp: null,
+    // isBijection: null,
+    // wire: null,
+    // isChitin: null,
+    // isCutTimeStop: null,
+    // isLaserWire: null,
+    // isMycelium: null,
+    // isEigenstate: null,
+    // isNormalMode: null,
+    // isFirstHarmonic: null,
+    // isSlimeAmmo: null,
+    // isThrowBlocks: null,
+    // isCasimir: null,
+    // isCasimirHealth: null,
+    // isCasimirRandom: null,
+    // mergedList: null,
 }
