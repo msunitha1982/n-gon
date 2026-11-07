@@ -1,9 +1,12 @@
+"use strict";
 // game Object ********************************************************
 //*********************************************************************
 const simulation = {
     loop() { }, //main game loop, gets set to normal or testing loop
     normalLoop() {
+        level.exit.isDrawPending = false;
         simulation.gravity();
+        // level.mirrorDoors.update();
         Engine.update(engine, simulation.delta);
         simulation.wipe();
         simulation.textLog();
@@ -31,11 +34,15 @@ const simulation = {
         if (!m.isTimeDilated) b.bulletDo();
         simulation.drawCircle();
         simulation.runEphemera();
+        // level.mirrorDoorsDraw();
+        if (level.exit.isDrawPending) level.exit.drawAndCheck(true);
         ctx.restore();
         simulation.drawCursor();
     },
     testingLoop() {
+        level.exit.isDrawPending = false;
         simulation.gravity();
+        // level.mirrorDoors.update();
         Engine.update(engine, simulation.delta);
         simulation.wipe();
         simulation.textLog();
@@ -52,30 +59,29 @@ const simulation = {
         m.hold();
         level.customTopLayer();
         simulation.draw.wireFrame();
+        // level.mirrorDoorsDraw();
         if (input.fire && m.fireCDcycle < m.cycle) {
             m.fireCDcycle = m.cycle + 15; //fire cooldown       
-            for (let i = 0, len = mob.length; i < len; i++) {
-                if (Vector.magnitudeSquared(Vector.sub(mob[i].position, simulation.mouseInGame)) < mob[i].radius * mob[i].radius) {
-                    console.log(mob[i])
-                }
-            }
         }
         simulation.draw.cons();
         simulation.draw.testing();
         simulation.drawCircle();
         simulation.runEphemera();
         simulation.constructCycle()
+        if (level.exit.isDrawPending) level.exit.drawAndCheck(true);
         ctx.restore();
         simulation.testingOutput();
         simulation.drawCursor();
     },
     isTimeSkipping: false,
+    extraCycles: 0, //timeSkip this many more each frame, before the frame's wipe so they don't show, the level editor's 2× time
     timeSkip(cycles = 60) {
         simulation.isTimeSkipping = true;
         for (let i = 0; i < cycles; i++) {
             simulation.cycle++;
             m.cycle++;
             simulation.gravity();
+            // level.mirrorDoors.update();
             Engine.update(engine, simulation.delta);
             if (m.onGround) {
                 m.groundControl()
@@ -93,6 +99,7 @@ const simulation = {
             b.bulletDo();
             simulation.runEphemera();
         }
+        simulation.draw.flushMapPathRebuild();
         simulation.isTimeSkipping = false;
     },
     timePlayerSkip(cycles = 60) {
@@ -101,6 +108,7 @@ const simulation = {
             simulation.cycle++;
             // m.walk_cycle += (m.flipLegs * m.Vx) * 0.5; //makes the legs look like they are moving fast this is just gonna run for each method call since it needs some tweaking
             simulation.gravity();
+            // level.mirrorDoors.update();
             Engine.update(engine, simulation.delta);
             // level.custom();
             // level.customTopLayer();
@@ -113,6 +121,77 @@ const simulation = {
         simulation.isTimeSkipping = false;
     },
     ephemera: [], //array that is used to store ephemera objects
+    pendingActions: [], //plain progress for callbacks that can outlive a level; saved in saveGame.state().runtime
+    queueAction(action) {
+        simulation.pendingActions.push(action)
+        simulation.runPendingAction(action)
+    },
+    runPendingAction(action) {
+        const queue = simulation.pendingActions
+        const cycle = () => {
+            //Loading or starting a run replaces the queue, so old callbacks cannot deliver rewards twice.
+            if (queue !== simulation.pendingActions || !queue.includes(action)) return
+            if (m.alive && simulation.stepPendingAction(action)) {
+                requestAnimationFrame(cycle)
+            } else {
+                if (action.type === "reality tech") m.isSwitchingWorlds = false
+                const index = queue.indexOf(action)
+                if (index !== -1) queue.splice(index, 1)
+            }
+        }
+        requestAnimationFrame(cycle)
+    },
+    resumePendingActions() {
+        for (const action of simulation.pendingActions) simulation.runPendingAction(action)
+    },
+    stepPendingAction(action) { //return true while this action still has work to do
+        switch (action.type) {
+            case "reality tech": {
+                if (m.cycle % 10) return true
+                if (action.remaining <= 0) return false
+                action.remaining--
+                const options = []
+                for (let i = 0; i < tech.tech.length; i++) {
+                    const t = tech.tech[i]
+                    if (t.count < t.maxCount && t.allowed() && !t.isBadRandomOption && !t.isLore && !t.isJunk && !t.isAltRealityTech && !tech.isNonDemolitionKept(t, action.keep ?? null)) { //localization only replaces the tech it didn't keep
+                        for (let j = 0; j < t.frequency; j++) options.push(i)
+                    }
+                }
+                if (options.length) tech.giveTech(options[Math.floor(Math.random() * options.length)])
+                return true
+            }
+            case "applied science": {
+                if (action.remaining <= 0) return false
+                if (simulation.paused || simulation.isChoosing) return true
+                action.remaining--
+                if (!(action.remaining % action.delay)) {
+                    action.gunIndex++
+                    if (b.inventory[action.gunIndex] !== undefined) tech.giveRandomGunTech(b.inventory[action.gunIndex])
+                }
+                return action.remaining > 0
+            }
+            case "quintessence": {
+                if (powerUps.research.count <= 0 || powerUps.research.count === Infinity) return false
+                if (simulation.paused || simulation.isChoosing) return true
+                const t = tech.tech.find(entry => entry.name === "quintessence")
+                if (!t) return false
+                powerUps.research.changeRerolls(-1)
+                t.researchUsed++
+                powerUps.spawnDelay("coupling", t.couplingToResearch)
+                return powerUps.research.count > 0
+            }
+            case "needles": {
+                if (simulation.paused || m.isTimeDilated) return true
+                action.count++
+                if (action.count % 2) {
+                    const needle = b.needle()
+                    if (tech.isIceCrystals) needle.isIceNeedle = true
+                }
+                return action.count < action.end
+            }
+        }
+        return false
+    },
     removeEphemera: function (who, isRemoveByName) {
         if (isRemoveByName) { //who is a string
             for (let i = 0, len = simulation.ephemera.length; i < len; i++) {
@@ -131,8 +210,9 @@ const simulation = {
         }
     },
     runEphemera() {
-        for (let i = 0; i < simulation.ephemera.length; i++) {
-            simulation.ephemera[i].do();
+        // for (let i = 0; i < simulation.ephemera.length; i++) {
+        for (let i = simulation.ephemera.length - 1; i >= 0; i--) {
+            simulation.ephemera[i]?.do(); //death can clear ephemera during a callback
         }
     },
     // timeMobSkip() {
@@ -180,6 +260,7 @@ const simulation = {
         y: 0
     },
     g: 0.0024, // applies to player, bodies, and power ups  (not mobs)
+    gDefault: 0.0024, //clearMap sets g back to this, local levels can change gravity
     onTitlePage: true,
     isCheating: false,
     isTraining: false,
@@ -190,6 +271,7 @@ const simulation = {
     fpsCap: null, //limits frames per second to 144/2=72,  on most monitors the fps is capped at 60fps by the hardware
     fpsCapDefault: 72, //use to change fpsCap back to normal after a hit from a mob
     isCommunityMaps: false,
+    isStartingGame: false,
     cyclePaused: 0,
     fallHeight: 6000, //below this y position the player will teleport to start, take damage, or teleport to the sky based on the value of  level.fallMode
     lastTimeStamp: 0, //tracks time stamps for measuring delta
@@ -197,13 +279,14 @@ const simulation = {
     buttonCD: 0,
     isHorizontalFlipped: false, //makes some maps flipped horizontally
     levelsCleared: 0,
-    difficultyMode: 2, //normal difficulty is 2
+    difficultyOptions: {}, //individual difficulty effects; initialized from saved settings
+    difficultyMode: 2, //derived numeric scale for legacy enemy tuning and community maps
     difficulty: 0,
     constraint: 0,
     healScale: 1,
     accelScale: null,
     CDScale: null,
-    molecularMode: Math.floor(4 * Math.random()), //0 spores, 1 missile, 2 ice IX, 3 drones //randomize molecular assembler field type
+    molecularMode: Math.floor(5 * Math.random()), //0 spores, 1 missile, 2 ice IX, 3 drones, 4 following needles //randomize molecular assembler field type
 
     drawCursor() {
         const size = 10;
@@ -230,13 +313,10 @@ const simulation = {
     drawCursorCoolDown() {
         const size = 10;
         ctx.lineWidth = 2;
-        ctx.strokeStyle = "#000"; //'rgba(0,0,0,0.4)'
+        ctx.strokeStyle = tech.isShotgunTiming && m.cycle < tech.shotgunTimingEndCycle ? "#f03" : "#000";
         ctx.beginPath();
         if (m.fireCDcycle > m.cycle) {
-            ctx.strokeStyle = "#000"; //'rgba(0,0,0,0.4)'
             ctx.arc(simulation.mouse.x, simulation.mouse.y, size + 1, 0, 2 * Math.PI);
-        } else {
-            ctx.strokeStyle = "#000"; //'rgba(0,0,0,0.4)'
         }
         ctx.moveTo(simulation.mouse.x - size, simulation.mouse.y);
         ctx.lineTo(simulation.mouse.x + size, simulation.mouse.y);
@@ -264,6 +344,7 @@ const simulation = {
         }
     },
     circleFlare(dup, loops = 100) {
+        let boltNum, colors, loop
         if (!localSettings.isHideHUD) {
             boltNum = dup * 300
             const bolts = []
@@ -346,17 +427,47 @@ const simulation = {
         }
         document.getElementById("right-HUD").innerHTML = text
     },
+    dmgNumbers(where, dmg, color = "rgba(255, 0, 17,", size = 45, isOutline = false) {
+        if (localSettings.showDmgNumbers && dmg > 0) {
+            simulation.ephemera.push({
+                count: 0,
+                drift: { x: (0.6 * Math.random()) * (Math.random() < 0.5 ? -1 : 1), y: 1 + 0.5 * Math.random() },
+                font: `${size}px Arial`,
+                do() {
+                    let pos
+                    this.count++
+                    if (this.count > size) {
+                        simulation.removeEphemera(this)
+                    } else {
+                        const opacity = Math.max(0, (2 * (60 - this.count)) / 60)
+                        ctx.fillStyle = `${color}${opacity})`;
+                        ctx.font = this.font;
+                        pos = Vector.add(where, Vector.mult(this.drift, -this.count))
+                        if (isOutline) {
+                            ctx.strokeStyle = `rgba(0,0,0,${opacity})`//"#000"
+                            ctx.lineWidth = 2;
+                            ctx.strokeText(dmg, pos.x, pos.y);
+                        }
+                        ctx.fillText(dmg, pos.x, pos.y);
+                    }
+                },
+            })
+        }
+    },
     lastLogTime: 0,
     isTextLogOpen: true,
+    consoleLength: 0,
     inGameConsole(text, time = 240) {
         if (!localSettings.isHideHUD && simulation.isTextLogOpen && !build.isExperimentSelection) {
-            if (simulation.lastLogTime > m.cycle) { //if there is an older message
+            if (simulation.lastLogTime > m.cycle && simulation.consoleLength < 30) { //if there is an older message
                 document.getElementById("text-log").innerHTML = document.getElementById("text-log").innerHTML + '<br>' + text;
                 simulation.lastLogTime = m.cycle + time;
+                simulation.consoleLength++
             } else {
                 document.getElementById("text-log").innerHTML = text;
                 document.getElementById("text-log").style.display = "inline";
                 simulation.lastLogTime = m.cycle + time;
+                simulation.consoleLength = 0
             }
         }
     },
@@ -388,10 +499,9 @@ const simulation = {
         }
     },
     switchGun() {
-        if (tech.isLongitudinal && b.activeGun === 3) b.guns[3].waves = []; //empty array of wave bullets
+        if (!tech.isTransverse && b.activeGun === 3) b.guns[3].waves = []; //empty array of longitudinal wave bullets
         if (tech.crouchAmmoCount) tech.crouchAmmoCount = 1 //this prevents hacking the tech by switching guns
         if (b.inventory.length > 0) b.activeGun = b.inventory[b.inventoryGun];
-        b.guns[8].charge = 0; // foam charge to 0
         simulation.updateGunHUD();
         simulation.boldActiveGunHUD();
         //set crosshairs
@@ -400,6 +510,7 @@ const simulation = {
         } else {
             simulation.drawCursor = simulation.drawCursorBasic
         }
+        // b.setFireMethod()
     },
     zoom: null,
     zoomScale: 1000,
@@ -641,6 +752,27 @@ const simulation = {
     restoreCamera() {
         ctx.restore();
     },
+    energyGenGraphic(totalCycles = 10 + Math.floor(Math.random() * 20)) {
+        if (m.immuneCycle >= m.cycle || m.isTimeDilated) return
+        //energy generation animation
+        if (!localSettings.isHideHUD) {
+            simulation.ephemera.push({
+                where: { x: m.pos.x + 45 * (Math.random() - 0.5), y: m.pos.y + Math.random() * 100 },
+                count: totalCycles,
+                r: 1.5 + 3 * Math.random(),
+                do() {
+                    this.count--
+                    if (this.count < 0) simulation.removeEphemera(this)
+                    this.where.y -= 3
+
+                    ctx.beginPath();
+                    ctx.arc(this.where.x, this.where.y, this.r, 0, 2 * Math.PI);
+                    ctx.fillStyle = m.fieldMeterColor
+                    ctx.fill();
+                },
+            })
+        }
+    },
     trails(swapPeriod = 150) {
         // const swapPeriod = 150
         const len = 30
@@ -659,39 +791,33 @@ const simulation = {
             }
         }, len * swapPeriod);
     },
-    // warp(translation = 5, skew = 0.05, scale = 0.05) {
-    // if (simulation.cycle % 2) { //have to alternate frames or else successive rumbles over write the effects of the previous rumble
-    // requestAnimationFrame(() => { ctx.setTransform(1, 0, 0, 1, 0, 0); }) //reset
-    // requestAnimationFrame(() => {
-    //     if (!simulation.paused && m.alive) {
-    //         ctx.transform(1 - scale * (Math.random() - 0.5), skew * (Math.random() - 0.5), skew * (Math.random() - 0.5), 1 - scale * (Math.random() - 0.5), translation * (Math.random() - 0.5), translation * (Math.random() - 0.5)); //ctx.transform(Horizontal scaling. A value of 1 results in no scaling,  Vertical skewing,   Horizontal skewing,   Vertical scaling. A value of 1 results in no scaling,   Horizontal translation (moving),   Vertical translation (moving)) //https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/setTransform
-    //     }
-    // })
-
-    //reset
-    // ctx.transform(1, 0, 0, 1, 0, 0); //ctx.transform(Horizontal scaling. A value of 1 results in no scaling,  Vertical skewing,   Horizontal skewing,   Vertical scaling. A value of 1 results in no scaling,   Horizontal translation (moving),   Vertical translation (moving)) //https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/setTransform
-
-    // }
-    // const loop = () => {
-    //     if (!simulation.paused && m.alive) {
-    //         ctx.save();
-    //         ctx.transform(1 - scale * (Math.random() - 0.5), skew * (Math.random() - 0.5), skew * (Math.random() - 0.5), 1 - scale * (Math.random() - 0.5), translation * (Math.random() - 0.5), translation * (Math.random() - 0.5)); //ctx.transform(Horizontal scaling. A value of 1 results in no scaling,  Vertical skewing,   Horizontal skewing,   Vertical scaling. A value of 1 results in no scaling,   Horizontal translation (moving),   Vertical translation (moving))
-    //         requestAnimationFrame(() => { ctx.restore(); })
-    //     }
-    // }
-    // requestAnimationFrame(loop);
-
-    // function loop() {
-    //     if (!simulation.paused && m.alive) {
-    //         ctx.save();
-    //         ctx.transform(1 - scale * (Math.random() - 0.5), skew * (Math.random() - 0.5), skew * (Math.random() - 0.5), 1 - scale * (Math.random() - 0.5), translation * (Math.random() - 0.5), translation * (Math.random() - 0.5)); //ctx.transform(Horizontal scaling. A value of 1 results in no scaling,  Vertical skewing,   Horizontal skewing,   Vertical scaling. A value of 1 results in no scaling,   Horizontal translation (moving),   Vertical translation (moving))
-    //         requestAnimationFrame(() => { ctx.restore(); })
-    //     }
-    //     requestAnimationFrame(loop);
-    // }
-    // requestAnimationFrame(loop);
-    // },
     wipe() { }, //set in simulation.startGame
+    warmedShaders: new Set(), //effects already drawn by simulation.warmShaders, the GPU keeps their shaders until the page reloads
+    warmShaders() { //the first time some effects are drawn, the GPU can freeze the game for ~0.3s while it builds new shaders
+        //called after a choice, before unpausing, so the freeze happens while the choice menu is still up
+        //an effect opts in with a warmUp() that draws it at the player the way the game does, in each state that looks different to the GPU
+        let isDrawn = false
+        for (const effect of [m.fieldUpgrades[m.fieldMode], ...tech.tech]) {
+            if (effect.warmUp && (effect === m.fieldUpgrades[m.fieldMode] || effect.count > 0) && !simulation.warmedShaders.has(effect.name)) {
+                simulation.warmedShaders.add(effect.name)
+                ctx.save()
+                ctx.setTransform(1, 0, 0, 1, 0, 0)
+                simulation.camera() //the next frame wipes these draws before they're seen
+                effect.warmUp()
+                ctx.restore()
+                ctx.restore()
+                isDrawn = true
+            }
+        }
+        if (isDrawn) { //copy the canvas and read a pixel, which waits for the GPU to finish the draws
+            const copy = document.createElement("canvas")
+            copy.width = 512 //smaller canvases might not use the GPU
+            copy.height = 512
+            const copyCtx = copy.getContext("2d")
+            copyCtx.drawImage(canvas, 0, 0, 1, 1)
+            copyCtx.getImageData(0, 0, 1, 1)
+        }
+    },
     gravity() {
         function addGravity(bodies, magnitude) {
             for (var i = 0; i < bodies.length; i++) {
@@ -706,14 +832,8 @@ const simulation = {
     },
     firstRun: true,
     splashReturn() {
-        if (document.fullscreenElement) {
-            // mouseMove.isLockPointer = true
-            document.body.addEventListener('mousedown', mouseMove.pointerUnlock, { once: true })//watches for mouse clicks that exit draft mode and self removes
-
-            document.exitPointerLock();
-            mouseMove.isPointerLocked = false
-            mouseMove.reset()
-        }
+        levelEditor.close()
+        mouseMove.unlock()
         document.getElementById("previous-seed").innerHTML = `previous seed: <span style="font-size:80%;">${Math.initialSeed}</span><br>`
         document.getElementById("seed").value = Math.initialSeed = Math.seed //randomize initial seed
 
@@ -722,7 +842,9 @@ const simulation = {
 
         canvas.style.filter = "brightness(1)"
         simulation.clearTimeouts();
+        titlePage.queueStart() //the title page player drops in after a couple seconds, see js/title.js
         simulation.onTitlePage = true;
+        detectDisplayFps()
         document.getElementById("splash").onclick = function () {
             simulation.startGame();
         };
@@ -736,46 +858,55 @@ const simulation = {
         document.getElementById("training-button").style.opacity = "0";
         document.getElementById("start-button").style.display = "inline"
         document.getElementById("start-button").style.opacity = "0";
+        saveGame.updateContinueButton()
+        document.getElementById("continue-button").style.opacity = "0";
+        levelEditor.updateSplashButton()
+        document.getElementById("level-editor-splash-button").style.opacity = "0";
         document.getElementById("experiment-grid").style.display = "none"
         document.getElementById("pause-grid-left").style.display = "none"
         document.getElementById("pause-grid-right").style.display = "none"
+        document.body.classList.remove("pause-open")
         document.getElementById("splash").style.display = "inline";
         document.getElementById("splash").style.opacity = "0";
         document.getElementById("dmg").style.display = "none";
         document.getElementById("health-bg").style.display = "none";
         document.getElementById("defense-bar").style.display = "none"
-        document.getElementById("damage-bar").style.display = "none"
         document.body.style.cursor = "auto";
         setTimeout(() => {
             document.getElementById("experiment-button").style.opacity = "1";
             document.getElementById("training-button").style.opacity = "1";
             document.getElementById("start-button").style.opacity = "1";
+            document.getElementById("continue-button").style.opacity = "1";
+            document.getElementById("level-editor-splash-button").style.opacity = "1";
             document.getElementById("info").style.opacity = "1";
             document.getElementById("splash").style.opacity = "1";
         }, 200);
     },
     fpsInterval: 0, //set in startGame
     then: null,
-    startGame(isBuildRun = false, isTrainingRun = false) {
-        if (localSettings.isHideHUD) {
-            simulation.draw.body = function () {
-                ctx.beginPath();
-                for (let i = 0, len = body.length; i < len; ++i) {
-                    let vertices = body[i].vertices;
-                    ctx.moveTo(vertices[0].x, vertices[0].y);
-                    for (let j = 1; j < vertices.length; j++) {
-                        ctx.lineTo(vertices[j].x, vertices[j].y);
-                    }
-                    ctx.lineTo(vertices[0].x, vertices[0].y);
-                }
-                ctx.fillStyle = color.block;
-                ctx.fill();
-            }
-        } else {
-            simulation.draw.body = simulation.draw.bodyDefault
+    async startGame(isBuildRun = false, isTrainingRun = false) {
+        let i, len
+        if (simulation.isStartingGame) return
+        simulation.isStartingGame = true
+        //request before any await so it still counts as part of the click that started the game, fullscreenchange locks the mouse
+        if (localSettings.isAutoFullscreen && !document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(err => console.error('Error attempting to enable fullscreen:', err));
         }
+        if (simulation.isCommunityMaps || isTrainingRun) {
+            try {
+                await level.loadMoreLevels()
+            } catch (error) {
+                simulation.isStartingGame = false
+                console.error(error)
+                return
+            }
+        }
+        simulation.isStartingGame = false
+        titlePage.stop() //removes the title page player and platforms before the run's player spawns, see js/title.js
+        simulation.draw.body = simulation.draw.bodyDefault //undo a community map's custom block drawing from the last run
         simulation.isTextLogOpen = true
         simulation.clearMap()
+        level.pendingTransfers = null //a fresh run never inherits arrivals from the previous run
         if (!isBuildRun) { //if a build run logic flow returns to "experiment-button").addEventListener
             document.body.style.cursor = "none";
             document.body.style.overflow = "hidden"
@@ -785,15 +916,20 @@ const simulation = {
         } else {
             simulation.isTraining = false
         }
+        simulation.difficultyOptions = powerUps.difficulty.normalize(simulation.isTraining ? {} : localSettings.difficultyOptions)
+        powerUps.difficulty.updateScale()
         simulation.onTitlePage = false;
         // document.getElementById("choose-grid").style.display = "none"
         document.getElementById("choose-grid").style.visibility = "hidden"
         document.getElementById("choose-grid").style.opacity = "0"
         document.getElementById("experiment-grid").style.display = "none"
         document.getElementById("info").style.display = "none";
+        levelPoolMenu.close()
         document.getElementById("experiment-button").style.display = "none";
         document.getElementById("training-button").style.display = "none";
         document.getElementById("start-button").style.display = "none";
+        document.getElementById("continue-button").style.display = "none";
+        document.getElementById("level-editor-splash-button").style.display = "none";
         // document.getElementById("experiment-button").style.opacity = "0";
         document.getElementById("splash").onclick = null; //removes the onclick effect so the function only runs once
         document.getElementById("splash").style.display = "none"; //hides the element that spawned the function
@@ -803,11 +939,9 @@ const simulation = {
         if (!localSettings.isHideHUD) {
             document.getElementById("right-HUD").style.display = "inline"
             document.getElementById("defense-bar").style.display = "inline"
-            document.getElementById("damage-bar").style.display = "inline"
         } else {
             document.getElementById("right-HUD").style.display = "none"
             document.getElementById("defense-bar").style.display = "none"
-            document.getElementById("damage-bar").style.display = "none"
         }
         document.getElementById("guns").style.display = "inline"
         document.getElementById("field").style.display = "inline"
@@ -817,6 +951,7 @@ const simulation = {
         document.getElementById("pause-grid-right").style.display = "none"
         document.getElementById("pause-grid-right").style.opacity = "1"
         document.getElementById("pause-grid-left").style.opacity = "1"
+        document.body.classList.remove("pause-open")
         ctx.globalCompositeOperation = "source-over"
         ctx.shadowBlur = 0;
 
@@ -837,6 +972,8 @@ const simulation = {
         level.populateLevels()
         input.endKeySensing();
         simulation.ephemera = []
+        simulation.pendingActions = []
+        powerUps.pendingSpawns = []
         powerUps.powerUpStorage = []
         tech.resetAllTech(); //sets tech to default values
         b.resetAllGuns();
@@ -862,6 +999,8 @@ const simulation = {
         powerUps.field.choiceLog = [];
         powerUps.totalPowerUps = 0;
         powerUps.research.count = 0;
+        powerUps.qubit.count = 0;
+        powerUps.qubit.damageCount = 0;
         powerUps.boost.endCycle = 0
         powerUps.isFieldSpawned = false
         m.setFillColors();
@@ -879,6 +1018,7 @@ const simulation = {
         simulation.lastLogTime = 0;
         mobs.mobDeaths = 0
         level.isFlipped = false
+        level.isFlipping = false;
         level.onLevel = 0;
         level.levelsCleared = 0;
         level.updateDifficulty()
@@ -896,9 +1036,10 @@ const simulation = {
         m.onGround = false
         // m.groundCount = 0
         m.lastOnGroundCycle = 0
-        m.health = 0;
+        // m.addHealth(0.25)
+        m.health = 0.25;
+
         level.isLowHeal = false
-        m.addHealth(0.25)
         m.drop();
         m.holdingTarget = null
 
@@ -907,6 +1048,7 @@ const simulation = {
         m.immuneCycle = 0;
         m.coupling = 0
         m.fieldUpgrades[1].energyHealthRatio = 1
+        m.fieldUpgrades[11].isPreview = false //portal views start off each run
         m.setField(0) //this calls m.couplingChange(), which sets max health and max energy
         m.energy = 1
         //exit testing
@@ -929,12 +1071,11 @@ const simulation = {
                     if (!(m.cycle % 15)) { //4 times a second
                         const defense = m.defense() //update defense bar
                         if (m.lastCalculatedDefense !== defense) {
-                            document.getElementById("defense-bar").style.width = Math.floor(300 * m.maxHealth * (1 - defense)) + "px";
+                            document.getElementById("defense-bar").style.width = Math.floor(m.healthBarWidth(m.maxHealth) * (1 - defense)) + "px";
                             m.lastCalculatedDefense = defense
                         }
                         const damage = tech.damageAdjustments() //update damage bar
                         if (m.lastCalculatedDamage !== damage) {
-                            document.getElementById("damage-bar").style.height = Math.floor((Math.atan(0.25 * damage - 0.25) + 0.25) * 0.63 * canvas.height) + "px";
                             m.lastCalculatedDamage = damage
                         }
                     }
@@ -943,6 +1084,15 @@ const simulation = {
         }
         simulation.ephemera.push({
             name: "checks", count: 0, do() {
+                if (localSettings.showDmgNumbers && !(m.cycle % 30)) {
+                    for (let i = 0; i < mob.length; i++) {
+                        if (mob[i].dmgLog) {
+                            simulation.dmgNumbers({ x: mob[i].position.x, y: mob[i].position.y - mob[i].radius * 1.4 }, Math.ceil(mob[i].dmgLog).toFixed(0), "rgba(255, 30, 67,", 40)
+                            mob[i].dmgLog = 0
+                        }
+                    }
+                }
+
                 if (!(m.cycle % 60)) { //once a second
                     //energy overfill 
                     if (m.energy > m.maxEnergy) {
@@ -990,7 +1140,7 @@ const simulation = {
                             })
                             const before = { x: player.position.x, y: player.position.y, }
                             const posXClamped = Math.min(Math.max(level.fallModeBounds.left, player.position.x), level.fallModeBounds.right)
-                            Matter.Body.setPosition(player, { x: posXClamped, y: level.enter.y - 4000 });
+                            Matter.Body.setPosition(player, { x: posXClamped, y: level.enter.y - 6000 });
 
                             // translate camera smoothly to preserve illusion to endless fall
                             const change = { x: before.x - posXClamped, y: before.y - player.position.y }
@@ -1018,28 +1168,14 @@ const simulation = {
                     }
                     if (isNaN(player.position.x)) m.death();
                     if (m.lastKillCycle + 300 > m.cycle) { //effects active for 5 seconds after killing a mob
-                        if (tech.isEnergyRecovery && m.immuneCycle < m.cycle) {
-                            m.energy += m.maxEnergy * 0.05 * level.isReducedRegen
-                            simulation.drawList.push({ //add dmg to draw queue
-                                x: m.pos.x,
-                                y: m.pos.y - 45,
-                                radius: Math.sqrt(m.maxEnergy * 0.05) * 60,
-                                color: "rgba(0, 204, 255,0.4)", //#0cf
-                                time: 4
-                            });
+                        if (tech.isEnergyRecovery) {
+                            m.addEnergy(m.maxEnergy * 0.05 * level.isReducedRegen)
+                            for (let i = 0; i < 2; i++)simulation.energyGenGraphic()
                         }
                         if (tech.isHealthRecovery) {
                             if (tech.isEnergyHealth) {
-                                if (m.immuneCycle < m.cycle) {
-                                    m.energy += m.maxEnergy * 0.005 * level.isReducedRegen
-                                    simulation.drawList.push({ //add dmg to draw queue
-                                        x: m.pos.x,
-                                        y: m.pos.y,
-                                        radius: Math.sqrt(m.maxEnergy * 0.02) * 60,
-                                        color: "rgba(0, 204, 255,0.4)", //#0cf
-                                        time: 4
-                                    });
-                                }
+                                m.addEnergy(m.maxEnergy * 0.005 * level.isReducedRegen)
+                                simulation.energyGenGraphic()
                             } else {
                                 const heal = 0.005 * m.maxHealth
                                 m.addHealth(heal)
@@ -1054,38 +1190,39 @@ const simulation = {
                         }
                     }
 
-                    if (!(m.cycle % 420)) { //once every 7 seconds
-                        //check if player is inside the map
-                        if (Matter.Query.point(map, m.pos).length > 0 || Matter.Query.point(map, player.position).length > 0) {
-                            //check for the next few seconds to see if being stuck continues
-                            simulation.ephemera.push({
-                                count: 240, //cycles before it self removes
-                                do() {
-                                    if (Matter.Query.point(map, m.pos).length > 0 || Matter.Query.point(map, player.position).length > 0) {
-                                        this.count--
+                    //check if player is stuck inside the map
+                    if (m.alive && !simulation.ephemera.some(e => e.name === "stuck") && m.isInsideMap()) {
+                        //check for the next 2 seconds to see if being stuck continues, physics can jiggle a stuck player out for a few cycles
+                        simulation.ephemera.push({
+                            name: "stuck",
+                            count: 0,
+                            free: 0, //cycles not inside the map
+                            do() {
+                                this.count++
+                                if (!m.isInsideMap()) this.free++
+                                if (this.free > 30) {
+                                    simulation.removeEphemera(this)
+                                } else if (this.count > 120) {
+                                    simulation.removeEphemera(this)
+                                    if (m.alive) m.unstuck()
+                                }
+                            },
+                        })
+                    }
 
-                                        if (this.count < 0) {
-                                            simulation.removeEphemera(this)
-                                            Matter.Body.setVelocity(player, { x: 0, y: 0 });
-                                            Matter.Body.setPosition(player, { x: level.enter.x + 50, y: level.enter.y - 20 });
-                                        }
-                                    } else {
-                                        simulation.removeEphemera(this)
-                                    }
-                                },
-                            })
-                        }
+                    if (!(m.cycle % 420)) { //once every 7 seconds
                         if (tech.isZeno) {
-                            if (tech.isEnergyHealth) {
-                                m.energy *= 0.95
-                            } else {
-                                m.health *= 0.95 //remove 5%
-                                m.displayHealth();
-                            }
+                            m.takeDamage(0.05 * (tech.isEnergyHealth ? m.energy : m.health), false)
+                            // if (tech.isEnergyHealth) {
+                            //     m.energy *= 0.95
+                            // } else {
+                            //     m.health *= 0.95 //remove 5%
+                            //     m.displayHealth();
+                            // }
                             simulation.drawList.push({ //add dmg to draw queue
                                 x: m.pos.x,
                                 y: m.pos.y,
-                                radius: 5,
+                                radius: 10,
                                 color: "rgb(255, 0, 195)",
                                 time: 4
                             });
@@ -1096,7 +1233,7 @@ const simulation = {
                         let i = body.length;
                         while (i--) {
                             if (body[i].position.y > simulation.fallHeight) {
-                                if (body[i].isInvulnerable) {
+                                if (body[i].isInvulnerable || body[i].isImmutable) {
                                     Matter.Body.setVelocity(body[i], { x: 0, y: 0 });
                                     if (level.fallMode === "position") {
                                         const posXClamped = Math.min(Math.max(level.fallModeBounds.left, body[i].position.x), level.fallModeBounds.right)
@@ -1143,11 +1280,12 @@ const simulation = {
             },
         })
 
+        saveGame.captureBaseline() //autosaves only store what changed from this fresh run
         //setup FPS cap
         simulation.fpsInterval = 1000 / simulation.fpsCap;
         simulation.then = Date.now();
         requestAnimationFrame(cycle); //starts game loop
-        // if (document.fullscreenElement) mouseMove.isLockPointer = true //this interacts with the mousedown event listener to exit pointer lock
+        mouseMove.lock()
     },
     clearTimeouts() {
         let id = window.setTimeout(function () { }, 0);
@@ -1157,63 +1295,26 @@ const simulation = {
     },
     clearNow: false,
     clearMap() {
+        let len
+        level.disableExit = false; //clear level-specific locks, including when starting a new run
+        // level.mirrorDoors.reset();
+        level.exit.reflection = null;
+        level.exit.ripple = null;
+        level.exit.isInverted = false;
+        level.exit.bottomOffset = 20;
         level.isVerticalFLipLevel = false
         level.isProcedural = false;
         level.fallMode = "";
         simulation.unFlipCameraVertical()
         ctx.setTransform(1, 0, 0, 1, 0, 0);
-        if (m.alive) {
-            if (tech.isLongitudinal) b.guns[3].waves = []; //empty array of wave bullets
-            if (b.guns[10].have) { //do you have mines as a gun
-                let count = 0;
-                for (i = 0, len = bullet.length; i < len; i++) { //count mines left on map
-                    if (
-                        (bullet[i].bulletType === "mine" && (!tech.isMineSentry || bullet[i].shots === undefined)) ||
-                        bullet[i].bulletType === "laser mine") {
-                        count++
-                    }
-                }
-                if (tech.crouchAmmoCount) count = Math.ceil(count / 2)
-                b.guns[10].ammo += count
-                if (tech.ammoCap) b.guns[10].ammo = Math.min(tech.ammoCap, b.guns[10].ammo)
-                simulation.updateGunHUD();
-            }
-
-            if (tech.isMutualism && !tech.isEnergyHealth) {
-                for (let i = 0; i < bullet.length; i++) {
-                    if (bullet[i].isMutualismActive) {
-                        if (tech.isMutualism && this.isMutualismActive) {
-                            if (tech.isEnergyHealth) {
-                                m.energy += 0.01 + 0.01 * ((bullet[i].isSpore || bullet[i].isFlea) ? 0 : 1)
-                            } else {
-                                m.health += 0.01 + 0.01 * ((bullet[i].isSpore || bullet[i].isFlea) ? 0 : 1)
-                                if (m.health > m.maxHealth) m.health = m.maxHealth;
-                                m.displayHealth();
-                            }
-                        }
-                    }
-                }
-            }
-            if (tech.isEndLevelPowerUp) {
-                for (let i = 0; i < powerUp.length; i++) {
-                    if (powerUp[i].name === "tech") {
-                        tech.giveTech()
-                    } else if (powerUp[i].name === "gun") {
-                        if (!tech.isOneGun) b.giveGuns("random")
-                    } else if (powerUp[i].name === "field") {
-                        if (m.fieldMode === 0) m.setField(Math.ceil(Math.random() * (m.fieldUpgrades.length - 1))) //pick a random field, but not field 0
-                    } else {
-                        powerUp[i].effect();
-                    }
-                }
-            }
-        }
         simulation.lastLogTime = 0; //clear previous messages
         spawn.allowShields = true;
         powerUps.totalPowerUps = powerUp.length
-        let holdTarget = (m.holdingTarget) ? m.holdingTarget : undefined //if player is holding something this remembers it before it gets deleted
+        let holdTarget = saveGame.isResuming ? saveGame.pendingHeldBlock : m.holdingTarget //checkpoints carry plain geometry, normal transitions carry the body
+        saveGame.pendingHeldBlock = null
         tech.deathSpawnsFromBoss = 0;
         simulation.fallHeight = 3000;
+        simulation.g = simulation.gDefault //a level can change gravity, see levelData.applySettings()
         document.body.style.backgroundColor = "#eee" //"#d8dadf";
         // color.map = "#444";
         // color.bullet = "#FFFFFF";
@@ -1231,143 +1332,17 @@ const simulation = {
         simulation.drawList = [];
         mobs.maxMobBody = 40
 
-        if (tech.isHealAttract && m.alive) { //send health power ups to the next level
-            let healCount = 0
-            for (let i = 0, len = powerUp.length; i < len; i++) {
-                if (powerUp[i].name === "heal") healCount++
-            }
-            //respawn health in animation frame
-            let respawnHeal = () => {
-                if (healCount > 0) {
-                    requestAnimationFrame(respawnHeal);
-                    if (!simulation.paused && !simulation.isChoosing) {
-                        healCount--
-                        powerUps.directSpawn(level.enter.x + 50 + 100 * (Math.random() - 0.5), level.enter.y - 60 + 100 * (Math.random() - 0.5), "heal");
-                    }
-                }
-            }
-            requestAnimationFrame(respawnHeal);
-        }
-        if (tech.isDronesTravel && m.alive) {
-            //count drones
-            // let droneCount = 0
-            let droneArray = []
-            let sporeCount = 0
-            let wormCount = 0
-            let fleaCount = 0
-            // let zombieCount = 0
-            for (let i = 0; i < bullet.length; ++i) {
-                if (bullet[i].isDrone && bullet[i].endCycle !== Infinity) {
-                    droneArray.push({
-                        isImproved: bullet[i].isImproved,
-                        scale: bullet[i].scale,
-                        endCycle: bullet[i].endCycle,
-                    })
-                } else if (bullet[i].isSpore) {
-                    sporeCount++
-                } else if (bullet[i].wormSize) {
-                    wormCount++
-                } else if (bullet[i].isFlea) {
-                    fleaCount++
-                }
-                // else if (bullet[i].isZombie) {
-                //     zombieCount++
-                // }
-            }
-
-            // const where = m.pos
-            //respawn drones in animation frame
-            requestAnimationFrame(() => {
-                let respawnDrones = () => {
-                    if (droneArray.length) {
-                        requestAnimationFrame(respawnDrones);
-                        if (!simulation.paused && !simulation.isChoosing && m.alive) {
-                            const where = { x: level.enter.x + 50, y: level.enter.y - 60 }
-                            if (tech.isDroneRadioactive) {
-                                b.droneRadioactive({ x: where.x + 50 * (Math.random() - 0.5), y: where.y + 50 * (Math.random() - 0.5) }, 0)
-                                if (droneArray[0].scale) bullet[bullet.length - 1].size = droneArray[0].scale
-                            } else {
-                                b.drone({ x: where.x + 50 * (Math.random() - 0.5), y: where.y + 50 * (Math.random() - 0.5) }, 0)
-                                const who = bullet[bullet.length - 1]
-                                if (droneArray[0].isImproved) who.isImproved = true;
-                                if (droneArray[0].scale) {
-                                    who.scale = droneArray[0].scale
-                                    Matter.Body.scale(who, who.scale, who.scale);
-                                }
-                                who.endCycle = droneArray[0].endCycle + 300
-                            }
-                            droneArray.shift() //remove first element
-                        }
-                    }
-                }
-                requestAnimationFrame(respawnDrones);
-            });
-
-            //respawn spores in animation frame
-            let respawnSpores = () => {
-                if (sporeCount > 0) {
-                    requestAnimationFrame(respawnSpores);
-                    if (!simulation.paused && !simulation.isChoosing) {
-                        sporeCount--
-                        const where = { x: level.enter.x + 50, y: level.enter.y - 60 }
-                        b.spore({ x: where.x + 100 * (Math.random() - 0.5), y: where.y + 120 * (Math.random() - 0.5) })
-                    }
-                }
-            }
-            requestAnimationFrame(respawnSpores);
-
-            //respawn worms in animation frame
-            let respawnWorms = () => {
-                if (wormCount > 0) {
-                    requestAnimationFrame(respawnWorms);
-                    if (!simulation.paused && !simulation.isChoosing) {
-                        wormCount--
-                        const where = { x: level.enter.x + 50, y: level.enter.y - 60 }
-                        b.worm({ x: where.x + 100 * (Math.random() - 0.5), y: where.y + 120 * (Math.random() - 0.5) })
-                    }
-                }
-            }
-            requestAnimationFrame(respawnWorms);
-
-            //respawn fleas in animation frame
-            let respawnFleas = () => {
-                if (fleaCount > 0) {
-                    requestAnimationFrame(respawnFleas);
-                    if (!simulation.paused && !simulation.isChoosing) {
-                        fleaCount--
-                        const speed = 6 + 3 * Math.random()
-                        const angle = 2 * Math.PI * Math.random()
-                        const where = { x: level.enter.x + 50, y: level.enter.y - 60 }
-                        b.flea({ x: where.x + 100 * (Math.random() - 0.5), y: where.y + 120 * (Math.random() - 0.5) }, { x: speed * Math.cos(angle), y: speed * Math.sin(angle) })
-                    }
-                }
-            }
-            requestAnimationFrame(respawnFleas);
-
-
-            //respawn spores in animation frame
-            // let respawnZombies = () => {
-            //     if (zombieCount > 0) {
-            //         requestAnimationFrame(respawnZombies);
-            //         if (!simulation.paused && !simulation.isChoosing) {
-            //             zombieCount--
-            //             spawn.zombie(where.x + 100 * (Math.random() - 0.5), where.y + 120 * (Math.random() - 0.5))
-            //         }
-            //     }
-            // }
-            // requestAnimationFrame(respawnZombies);
-        }
-        if (tech.isQuantumEraser && m.alive) {
+        level.collectTransfers()
+        b.clearProjectiles({ refund: true })
+        if (tech.isQuantumEraser && m.alive && !saveGame.isResuming) {
             let count = 0
             for (let i = 0, len = mob.length; i < len; i++) {
                 if (mob[i].isDropPowerUp && mob[i].alive) count++
             }
-            count *= 0.4 //to fake the 25% chance, this makes it not random, and more predictable
-            let cycle = () => { //run after waiting a cycle for the map to be cleared
-                const types = ["heal", "ammo", "heal", "ammo", "research", "coupling", "boost", "tech", "gun", "field"]
-                for (let i = 0; i < count; i++) powerUps.spawnDelay(types[Math.floor(Math.random() * types.length)], 1)
-            }
-            requestAnimationFrame(cycle);
+            count *= 0.44 //to fake the chance, this makes it not random, and more predictable
+            //Queue before the checkpoint; spawnDelay still waits until the map has been cleared.
+            const types = ["heal", "ammo", "heal", "ammo", "research", "coupling", "boost", "tech", "gun", "field"]
+            for (let i = 0; i < count; i++) powerUps.spawnDelay(types[Math.floor(Math.random() * types.length)], 1)
         }
 
         function removeAll(array) {
@@ -1378,6 +1353,7 @@ const simulation = {
         map = [];
         removeAll(body);
         body = [];
+        lastTouchedBlock = null;
         removeAll(mob);
         mob = [];
         removeAll(powerUp);
@@ -1386,8 +1362,6 @@ const simulation = {
         cons = [];
         removeAll(consBB);
         consBB = [];
-        removeAll(bullet);
-        bullet = [];
         removeAll(composite);
         composite = [];
         // if player was holding something this makes a new copy to hold
@@ -1396,14 +1370,17 @@ const simulation = {
             body[len] = Matter.Bodies.fromVertices(0, 0, holdTarget.vertices, {
                 friction: holdTarget.friction,
                 frictionAir: holdTarget.frictionAir,
-                frictionStatic: holdTarget.frictionStatic
+                frictionStatic: holdTarget.frictionStatic,
+                isKey: holdTarget.isKey,
+                isImmutable: holdTarget.isImmutable,
+                draw: holdTarget.draw
             });
             Matter.Body.setPosition(body[len], m.pos);
             m.isHolding = true
             m.holdingTarget = body[len];
             m.holdingTarget.collisionFilter.category = 0;
             m.holdingTarget.collisionFilter.mask = 0;
-            m.definePlayerMass(m.defaultMass + m.holdingTarget.mass * m.holdingMassScale)
+            m.definePlayerMass(m.holdingMass(m.holdingTarget))
             Composite.add(engine.world, m.holdingTarget); //add to world
             m.holdingTarget.classType = "body"
         }
@@ -1441,88 +1418,122 @@ const simulation = {
     // },
     testingOutput() {
         ctx.fillStyle = "#000";
-        ctx.textAlign = "center";
         ctx.fillText(`(${simulation.mouseInGame.x.toFixed(1)}, ${simulation.mouseInGame.y.toFixed(1)})`, simulation.mouse.x, simulation.mouse.y - 20);
     },
     sight: { //credit to Cornbread2100 for adding this algorithm to n-gon
         // square: 0,
-        intersectMap: [], //this is precalculated in simulation.draw.lineOfSightPrecalculation()
-        getIntersection(v1, v1End, domain) {
-            const intersections = simulation.sight.getIntersections(v1, v1End, domain);
-            var best = { x: v1End.x, y: v1End.y, dist: (v1End.x - v1.x) ** 2 + (v1End.y - v1.y) ** 2 }
-            for (const intersection of intersections) {
-                const dist = (intersection.x - v1.x) ** 2 + (intersection.y - v1.y) ** 2;
-                if (dist < best.dist) best = { x: intersection.x, y: intersection.y, dist: dist }
+        intersectMap: [], //each wall's corners and where other walls cross it, simulation.sight.buildIntersectMap() keeps it up to date with the map
+        circleLineCollisionsLegacy(a, b, c, radius) {
+            const angleOffset = Math.atan2(b.y - a.y, b.x - a.x);
+            const sideB = Math.sqrt((a.x - c.x) ** 2 + (a.y - c.y) ** 2);
+            const sideC = Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
+            const sideA = Math.sqrt((c.x - b.x) ** 2 + (c.y - b.y) ** 2);
+            const angleA = Math.acos((sideB ** 2 + sideC ** 2 - sideA ** 2) / (2 * sideB * sideC)) *
+                (a.x - c.x) / -Math.abs(a.x - c.x);
+            const sideAD = Math.cos(angleA) * sideB;
+            const d = {
+                x: Math.cos(angleOffset) * sideAD + a.x,
+                y: Math.sin(angleOffset) * sideAD + a.y
+            };
+            const distance = Math.sqrt((d.x - c.x) ** 2 + (d.y - c.y) ** 2);
+            if (distance == radius) return [d];
+            if (distance >= radius) return [];
+
+            const collisionAngle = Math.atan2(d.y - c.y, d.x - c.x);
+            const innerAngle = Math.acos(distance / radius);
+            const intersection1 = {
+                x: Math.cos(collisionAngle + innerAngle) * radius + c.x,
+                y: Math.sin(collisionAngle + innerAngle) * radius + c.y
+            };
+            const intersection2 = {
+                x: Math.cos(collisionAngle - innerAngle) * radius + c.x,
+                y: Math.sin(collisionAngle - innerAngle) * radius + c.y
+            };
+            const distance1A = Math.sqrt((intersection1.x - a.x) ** 2 + (intersection1.y - a.y) ** 2);
+            const distance1B = Math.sqrt((intersection1.x - b.x) ** 2 + (intersection1.y - b.y) ** 2);
+            const distance2A = Math.sqrt((intersection2.x - a.x) ** 2 + (intersection2.y - a.y) ** 2);
+            const distance2B = Math.sqrt((intersection2.x - b.x) ** 2 + (intersection2.y - b.y) ** 2);
+            const result = [];
+            if (Math.abs(sideC - (distance1A + distance1B)) < 0.01) {
+                result.push(intersection1);
+            } else if (distance1A < distance1B) {
+                if (sideB <= radius) result.push(a);
+            } else if (sideA <= radius) {
+                result.push(b);
             }
-            best.dist = Math.sqrt(best.dist)
-            return best;
+            if (Math.abs(sideC - (distance2A + distance2B)) < 0.01) {
+                result.push(intersection2);
+            } else if (distance2A <= distance2B) {
+                if (sideB <= radius) result.push(a);
+            } else if (sideA <= radius) {
+                result.push(b);
+            }
+            return result;
         },
-        // getIntersections(v1, v1End, domain) {
-        //     const intersections = [];
-        //     for (const obj of domain) {
-        //         for (var i = 0; i < obj.vertices.length - 1; i++) {
-        //             results = simulation.checkLineIntersection(v1, v1End, obj.vertices[i], obj.vertices[i + 1]);
-        //             if (results.onLine1 && results.onLine2) intersections.push({ x: results.x, y: results.y });
-        //         }
-        //         results = simulation.checkLineIntersection(v1, v1End, obj.vertices[obj.vertices.length - 1], obj.vertices[0]);
-        //         if (results.onLine1 && results.onLine2) intersections.push({ x: results.x, y: results.y });
-        //     }
-        //     return intersections;
-        // },
 
-        // (Only adds an AABB guard + declares `results` with let.)
-        getIntersections(v1, v1End, domain) {
-            function segmentsBboxOverlap(p1, p2, q1, q2) {
-                // Bounding box of segment p1-p2
-                const pMinX = p1.x < p2.x ? p1.x : p2.x;
-                const pMaxX = p1.x > p2.x ? p1.x : p2.x;
-                const pMinY = p1.y < p2.y ? p1.y : p2.y;
-                const pMaxY = p1.y > p2.y ? p1.y : p2.y;
-
-                // Bounding box of segment q1-q2
-                const qMinX = q1.x < q2.x ? q1.x : q2.x;
-                const qMaxX = q1.x > q2.x ? q1.x : q2.x;
-                const qMinY = q1.y < q2.y ? q1.y : q2.y;
-                const qMaxY = q1.y > q2.y ? q1.y : q2.y;
-
-                // Boxes must overlap on both axes to possibly intersect
-                return !(pMaxX < qMinX || qMaxX < pMinX || pMaxY < qMinY || qMaxY < pMinY);
+        circleLineCollisions(a, b, c, radius) {
+            const edgeDx = b.x - a.x;
+            const edgeDy = b.y - a.y;
+            const edgeLengthSquared = edgeDx * edgeDx + edgeDy * edgeDy;
+            const centerDx = c.x - a.x;
+            const centerDy = c.y - a.y;
+            const side = edgeDx * centerDy - edgeDy * centerDx;
+            if (edgeLengthSquared === 0 || a.x === c.x || side === 0) {
+                return simulation.sight.circleLineCollisionsLegacy(a, b, c, radius);
             }
 
-            const intersections = [];
+            const closestFraction = (centerDx * edgeDx + centerDy * edgeDy) / edgeLengthSquared;
+            const closestX = a.x + closestFraction * edgeDx;
+            const closestY = a.y + closestFraction * edgeDy;
+            const closestDx = closestX - c.x;
+            const closestDy = closestY - c.y;
+            const closestDistanceSquared = closestDx * closestDx + closestDy * closestDy;
+            const radiusSquared = radius * radius;
+            if (closestDistanceSquared === radiusSquared) return [{ x: closestX, y: closestY }];
+            if (closestDistanceSquared >= radiusSquared) return [];
 
-            for (const obj of domain) {
-                // iterate edges [i] -> [i+1]
-                for (let i = 0; i < obj.vertices.length - 1; i++) {
-                    const a = obj.vertices[i];
-                    const b = obj.vertices[i + 1];
+            const edgeLength = Math.sqrt(edgeLengthSquared);
+            const rootOffset = Math.sqrt(radiusSquared - closestDistanceSquared) / edgeLength;
+            const lowerFraction = closestFraction - rootOffset;
+            const upperFraction = closestFraction + rootOffset;
+            const firstFraction = side > 0 ? upperFraction : lowerFraction;
+            const secondFraction = side > 0 ? lowerFraction : upperFraction;
+            const fractionTolerance = 0.005 / edgeLength;
+            const aInside = centerDx * centerDx + centerDy * centerDy <= radiusSquared;
+            const bCenterDx = b.x - c.x;
+            const bCenterDy = b.y - c.y;
+            const bInside = bCenterDx * bCenterDx + bCenterDy * bCenterDy <= radiusSquared;
+            const result = [];
 
-                    // Cheap reject: skip if segment bbox doesn't overlap ray bbox
-                    if (!segmentsBboxOverlap(v1, v1End, a, b)) continue;
-
-                    let results = simulation.checkLineIntersection(v1, v1End, a, b);
-                    if (results.onLine1 && results.onLine2) intersections.push({ x: results.x, y: results.y });
-                }
-
-                // close the polygon: last -> first
-                const a = obj.vertices[obj.vertices.length - 1];
-                const b = obj.vertices[0];
-
-                if (segmentsBboxOverlap(v1, v1End, a, b)) {
-                    let results = simulation.checkLineIntersection(v1, v1End, a, b);
-                    if (results.onLine1 && results.onLine2) intersections.push({ x: results.x, y: results.y });
+            function appendCollision(fraction) {
+                if (fraction > -fractionTolerance && fraction < 1 + fractionTolerance) {
+                    result.push({
+                        x: a.x + fraction * edgeDx,
+                        y: a.y + fraction * edgeDy
+                    });
+                } else if (fraction < 0.5) {
+                    if (aInside) result.push(a);
+                } else if (bInside) {
+                    result.push(b);
                 }
             }
 
-            return intersections;
+            appendCollision(firstFraction);
+            appendCollision(secondFraction);
+            return result;
         },
 
         circleLoS(pos, radius) {
+            simulation.sight.updateMapGrid()
+            const solid = simulation.sight.mapGrid.solid //tech: ray, you can see through the line left behind
+            const isPosInWall = simulation.sight.isPointInWall(pos) //seeing nothing is the same for every sight line, so only check once
+            let test
             function allCircleLineCollisions(c, radius, domain) {
                 var lines = [];
                 for (const obj of domain) {
-                    for (var i = 0; i < obj.vertices.length - 1; i++) lines.push(circleLineCollisions(obj.vertices[i], obj.vertices[i + 1], c, radius));
-                    lines.push(circleLineCollisions(obj.vertices[obj.vertices.length - 1], obj.vertices[0], c, radius));
+                    if (!simulation.sight.isBoundsOnCircle(obj.bounds, c, radius)) continue;
+                    for (var i = 0; i < obj.vertices.length - 1; i++) lines.push(simulation.sight.circleLineCollisions(obj.vertices[i], obj.vertices[i + 1], c, radius));
+                    lines.push(simulation.sight.circleLineCollisions(obj.vertices[obj.vertices.length - 1], obj.vertices[0], c, radius));
                 }
                 const collisionLines = [];
                 for (const line of lines) {
@@ -1546,99 +1557,29 @@ const simulation = {
                 return collisionLines;
             }
 
-            function circleLineCollisions(a, b, c, radius) {
-                // calculate distances
-                const angleOffset = Math.atan2(b.y - a.y, b.x - a.x);
-                const sideB = Math.sqrt((a.x - c.x) ** 2 + (a.y - c.y) ** 2);
-                const sideC = Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2);
-                const sideA = Math.sqrt((c.x - b.x) ** 2 + (c.y - b.y) ** 2);
-
-                // calculate the closest point on line AB to point C
-                const angleA = Math.acos((sideB ** 2 + sideC ** 2 - sideA ** 2) / (2 * sideB * sideC)) * (a.x - c.x) / -Math.abs(a.x - c.x)
-                const sideAD = Math.cos(angleA) * sideB;
-                const d = { // closest point
-                    x: Math.cos(angleOffset) * sideAD + a.x,
-                    y: Math.sin(angleOffset) * sideAD + a.y
-                }
-                const distance = Math.sqrt((d.x - c.x) ** 2 + (d.y - c.y) ** 2);
-                if (distance == radius) {
-                    // tangent
-                    return [d];
-                } else if (distance < radius) {
-                    // secant
-                    const angleOffset = Math.atan2(d.y - c.y, d.x - c.x);
-                    const innerAngle = Math.acos(distance / radius);
-                    const intersection1 = {
-                        x: Math.cos(angleOffset + innerAngle) * radius + c.x,
-                        y: Math.sin(angleOffset + innerAngle) * radius + c.y
-                    }
-
-                    const intersection2 = {
-                        x: Math.cos(angleOffset - innerAngle) * radius + c.x,
-                        y: Math.sin(angleOffset - innerAngle) * radius + c.y
-                    }
-
-                    const distance1 = {
-                        a: Math.sqrt((intersection1.x - a.x) ** 2 + (intersection1.y - a.y) ** 2),
-                        b: Math.sqrt((intersection1.x - b.x) ** 2 + (intersection1.y - b.y) ** 2)
-                    }
-                    const distance2 = {
-                        a: Math.sqrt((intersection2.x - a.x) ** 2 + (intersection2.y - a.y) ** 2),
-                        b: Math.sqrt((intersection2.x - b.x) ** 2 + (intersection2.y - b.y) ** 2)
-                    }
-                    const result = [];
-                    if (Math.abs(sideC - (distance1.a + distance1.b)) < 0.01) {
-                        result.push(intersection1);
-                    } else {
-                        if (distance1.a < distance1.b) {
-                            if (sideB <= radius) result.push(a);
-                        } else {
-                            if (sideA <= radius) result.push(b)
-                        }
-                    }
-                    if (Math.abs(sideC - (distance2.a + distance2.b)) < 0.01) {
-                        result.push(intersection2);
-                    } else {
-                        if (distance2.a <= distance2.b) {
-                            if (sideB <= radius) result.push(a);
-                        } else {
-                            if (sideA <= radius) result.push(b)
-                        }
-                    }
-
-                    return result;
-                } else {
-                    // no intersection
-                    return [];
-                }
-            }
-
             var vertices = [];
+            const radiusSquared = radius * radius
             for (const obj of simulation.sight.intersectMap) {
                 for (var i = 0; i < obj.vertices.length; i++) {
                     const vertex = obj.vertices[i];
+                    //skip corners outside the circle, where walls cross the circle is found below with circleCollisions
+                    if ((vertex.x - pos.x) ** 2 + (vertex.y - pos.y) ** 2 > radiusSquared) continue
                     const angleToVertex = Math.atan2(vertex.y - pos.y, vertex.x - pos.x);
                     // const distanceToVertex = Math.sqrt((vertex.x - pos.x) ** 2 + (vertex.y - pos.y) ** 2);
                     // const queryPoint = { x: Math.cos(angleToVertex) * (distanceToVertex - 1) + pos.x, y: Math.sin(angleToVertex) * (distanceToVertex - 1) + pos.y }
                     const queryPoint = { x: Math.cos(angleToVertex + Math.PI) + vertex.x, y: Math.sin(angleToVertex + Math.PI) + vertex.y }
 
-                    if (Matter.Query.ray(map, pos, queryPoint).length == 0) {
+                    if (!isPosInWall && !simulation.sight.isSightBlocked(pos, queryPoint)) {
                         var distance = Math.sqrt((vertex.x - pos.x) ** 2 + (vertex.y - pos.y) ** 2);
                         var endPoint = { x: vertex.x, y: vertex.y }
 
-                        if (distance > radius) {
-                            const angle = Math.atan2(vertex.y - pos.y, vertex.x - pos.x);
-                            endPoint = { x: Math.cos(angle) * radius + pos.x, y: Math.sin(angle) * radius + pos.y }
-                            distance = radius
-                        }
-
-                        var best = simulation.sight.getIntersection(pos, endPoint, map);
+                        var best = simulation.sight.getIntersection(pos, endPoint);
                         if (best.dist >= distance) best = { x: endPoint.x, y: endPoint.y, dist: distance }
                         vertices.push(best)
 
                         var angle = Math.atan2(vertex.y - pos.y, vertex.x - pos.x);
                         endPoint = { x: Math.cos(angle + 0.001) * radius + pos.x, y: Math.sin(angle + 0.001) * radius + pos.y }
-                        best = simulation.sight.getIntersection(pos, endPoint, map);
+                        best = simulation.sight.getIntersection(pos, endPoint);
 
                         if (best.dist >= radius) best = { x: endPoint.x, y: endPoint.y, dist: radius }
                         vertices.push(best)
@@ -1646,21 +1587,21 @@ const simulation = {
                         angle = Math.atan2(vertex.y - pos.y, vertex.x - pos.x);
                         endPoint = { x: Math.cos(angle - 0.001) * radius + pos.x, y: Math.sin(angle - 0.001) * radius + pos.y }
 
-                        best = simulation.sight.getIntersection(pos, endPoint, map);
+                        best = simulation.sight.getIntersection(pos, endPoint);
                         if (best.dist >= radius) best = { x: endPoint.x, y: endPoint.y, dist: radius }
                         vertices.push(best)
                     }
                 }
             }
 
-            const outerCollisions = allCircleLineCollisions(pos, radius, map);
+            const outerCollisions = allCircleLineCollisions(pos, radius, solid);
             const circleCollisions = [];
             for (const line of outerCollisions) {
                 for (const vertex of line) {
                     const distance = Math.sqrt((vertex.x - pos.x) ** 2 + (vertex.y - pos.y) ** 2)
                     const angle = Math.atan2(vertex.y - pos.y, vertex.x - pos.x);
                     const queryPoint = { x: Math.cos(angle + Math.PI) + vertex.x, y: Math.sin(angle + Math.PI) + vertex.y }
-                    if (Math.abs(distance - radius) < 1 && Matter.Query.ray(map, pos, queryPoint).length == 0) circleCollisions.push(vertex)
+                    if (Math.abs(distance - radius) < 1 && !isPosInWall && !simulation.sight.isSightBlocked(pos, queryPoint)) circleCollisions.push(vertex)
                 }
             }
             for (var i = 0; i < circleCollisions.length; i++) {
@@ -1690,21 +1631,399 @@ const simulation = {
 
                 // shoot ray between them
                 var endPoint = { x: Math.cos(newAngle) * radius + pos.x, y: Math.sin(newAngle) * radius + pos.y }
-                var best = simulation.sight.getIntersection(pos, endPoint, map);
+                var best = simulation.sight.getIntersection(pos, endPoint);
                 vertices.push(vertex);
                 if (best.dist <= radius) vertices.push({ x: best.x, y: best.y })
+            }
+            if (vertices.length === 0 && !Matter.Query.point(solid, pos).length) { //no walls in the circle, so see the whole circle
+                for (let angle = -Math.PI; angle < Math.PI; angle += Math.PI / 2) vertices.push({ x: Math.cos(angle) * radius + pos.x, y: Math.sin(angle) * radius + pos.y })
             }
             vertices.sort((a, b) => Math.atan2(a.y - pos.y, a.x - pos.x) - Math.atan2(b.y - pos.y, b.x - pos.x));
             return vertices;
         },
+
+        isBoundsOnCircle(bounds, c, radius) { //only walls near the edge of the circle can cross it, the extra 1 matches the distance check in circleLoS
+            const nearX = Math.max(bounds.min.x - c.x, 0, c.x - bounds.max.x);
+            const nearY = Math.max(bounds.min.y - c.y, 0, c.y - bounds.max.y);
+            if (nearX * nearX + nearY * nearY > (radius + 1) * (radius + 1)) return false;
+            if (radius <= 1) return true;
+            const farX = Math.max(Math.abs(bounds.min.x - c.x), Math.abs(bounds.max.x - c.x));
+            const farY = Math.max(Math.abs(bounds.min.y - c.y), Math.abs(bounds.max.y - c.y));
+            return farX * farX + farY * farY >= (radius - 1) * (radius - 1);
+        },
+
+        mapGrid: { //every wall edge sorted into square cells, so a sight line only tests the walls it passes near
+            minCellSize: 256,
+            maxCells: 65536,
+            maxCellsWide: 4096,
+            pad: 0.000001, //much bigger than rounding error, so a cell is never missed by a tiny amount
+            bodies: [], //the map when the grid was built, updateMapGrid compares this to the map
+            state: new Float64Array(0), //bounds, angle, and isRay of each of those bodies
+            solid: [], //map without tech: ray's lines
+            cols: 0,
+            rows: 0,
+            cellSize: 1,
+            originX: 0,
+            originY: 0,
+            edgeCells: [], //edges in each cell
+            bodyCells: [], //bodies with bounds that touch each cell
+            edges: new Float64Array(0), //x1, y1, x2, y2 of each edge
+            edgeKinds: new Uint8Array(0), //1 is for blocking sight, 2 is for the nearest hit, they only differ for compound bodies
+            edgeStamps: new Float64Array(0), //the last sight line to test each edge, long edges are in several cells
+            edgeBodies: new Int32Array(0), //the map index of each edge's body
+            edgeNumbers: new Int32Array(0), //each outline edge's place in its body, the edge from vertices[n] to vertices[n + 1]
+            stamp: 0,
+            lineCells: [], //the cells on the current sight line, from its start to its end
+        },
+        updateMapGrid() { //runs each frame, finds any change to the map by itself and rebuilds the grid and the corners in intersectMap, so moving doors and walls added during a level don't need a manual rebuild
+            const grid = simulation.sight.mapGrid;
+            const state = grid.state;
+            let isCurrent = grid.bodies.length === map.length;
+            for (let i = 0, j = 0; isCurrent && i < map.length; i++, j += 6) {
+                const who = map[i];
+                const min = who.bounds.min;
+                const max = who.bounds.max;
+                isCurrent = grid.bodies[i] === who && state[j] === min.x && state[j + 1] === min.y && state[j + 2] === max.x && state[j + 3] === max.y &&
+                    state[j + 4] === who.angle && state[j + 5] === (who.isRay ? 1 : 0);
+            }
+            if (!isCurrent) simulation.sight.buildMapGrid();
+        },
+        buildMapGrid() {
+            const grid = simulation.sight.mapGrid;
+            grid.bodies = map.slice();
+            if (grid.state.length !== map.length * 6) grid.state = new Float64Array(map.length * 6);
+            grid.solid = [];
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, edgeCount = 0;
+            for (let i = 0, j = 0; i < map.length; i++, j += 6) {
+                const who = map[i];
+                const min = who.bounds.min;
+                const max = who.bounds.max;
+                grid.state[j] = min.x;
+                grid.state[j + 1] = min.y;
+                grid.state[j + 2] = max.x;
+                grid.state[j + 3] = max.y;
+                grid.state[j + 4] = who.angle;
+                grid.state[j + 5] = who.isRay ? 1 : 0;
+                if (who.isRay) continue;
+                grid.solid.push(who);
+                if (min.x < minX) minX = min.x;
+                if (min.y < minY) minY = min.y;
+                if (max.x > maxX) maxX = max.x;
+                if (max.y > maxY) maxY = max.y;
+                edgeCount += who.vertices.length;
+                for (let k = 1; k < who.parts.length; k++) edgeCount += who.parts[k].vertices.length;
+            }
+
+            if (!grid.solid.length || !(maxX - minX < Infinity) || !(maxY - minY < Infinity)) {
+                grid.cols = grid.rows = 0;
+                simulation.sight.intersectMap = [];
+                return;
+            }
+            const wide = maxX - minX;
+            const tall = maxY - minY;
+            const cellSize = Math.max(grid.minCellSize, Math.ceil(Math.sqrt(wide * tall / grid.maxCells)), Math.ceil(Math.max(wide, tall) / grid.maxCellsWide));
+            const originX = minX - 1;
+            const originY = minY - 1;
+            const cols = Math.floor((maxX + 1 - originX) / cellSize) + 1;
+            const rows = Math.floor((maxY + 1 - originY) / cellSize) + 1;
+            if (grid.cols !== cols || grid.rows !== rows || grid.cellSize !== cellSize || grid.edgeCells.length !== cols * rows) { //a moving door usually doesn't change the layout
+                grid.edgeCells = [];
+                grid.bodyCells = [];
+                for (let i = 0; i < cols * rows; i++) {
+                    grid.edgeCells.push([]);
+                    grid.bodyCells.push([]);
+                }
+            } else {
+                for (let i = 0; i < cols * rows; i++) {
+                    grid.edgeCells[i].length = 0;
+                    grid.bodyCells[i].length = 0;
+                }
+            }
+            grid.cols = cols;
+            grid.rows = rows;
+            grid.cellSize = cellSize;
+            grid.originX = originX;
+            grid.originY = originY;
+
+            if (grid.edgeKinds.length < edgeCount) {
+                grid.edges = new Float64Array(edgeCount * 4);
+                grid.edgeKinds = new Uint8Array(edgeCount);
+                grid.edgeStamps = new Float64Array(edgeCount);
+                grid.edgeBodies = new Int32Array(edgeCount);
+                grid.edgeNumbers = new Int32Array(edgeCount);
+            }
+            let edgeIndex = 0;
+            function addEdges(vertices, kind, bodyIndex) {
+                let a = vertices[vertices.length - 1];
+                for (let i = 0; i < vertices.length; i++) {
+                    const b = vertices[i];
+                    grid.edges[edgeIndex * 4] = a.x;
+                    grid.edges[edgeIndex * 4 + 1] = a.y;
+                    grid.edges[edgeIndex * 4 + 2] = b.x;
+                    grid.edges[edgeIndex * 4 + 3] = b.y;
+                    grid.edgeKinds[edgeIndex] = kind;
+                    grid.edgeBodies[edgeIndex] = bodyIndex;
+                    grid.edgeNumbers[edgeIndex] = i === 0 ? vertices.length - 1 : i - 1; //the edge from vertex i - 1 to vertex i
+                    const count = simulation.sight.findLineCells(a.x, a.y, b.x, b.y);
+                    for (let j = 0; j < count; j++) grid.edgeCells[grid.lineCells[j]].push(edgeIndex);
+                    edgeIndex++;
+                    a = b;
+                }
+            }
+            for (let bodyIndex = 0; bodyIndex < map.length; bodyIndex++) {
+                const who = map[bodyIndex];
+                if (who.isRay) continue;
+                if (who.parts.length === 1) {
+                    addEdges(who.vertices, 3, bodyIndex);
+                } else { //Matter.Query.segmentAny tests the parts of a compound body, the nearest hit uses its outline
+                    addEdges(who.vertices, 2, bodyIndex);
+                    for (let k = 1; k < who.parts.length; k++) addEdges(who.parts[k].vertices, 1, bodyIndex);
+                }
+                const startCol = Math.floor((who.bounds.min.x - grid.pad - originX) / cellSize);
+                const endCol = Math.floor((who.bounds.max.x + grid.pad - originX) / cellSize);
+                const startRow = Math.floor((who.bounds.min.y - grid.pad - originY) / cellSize);
+                const endRow = Math.floor((who.bounds.max.y + grid.pad - originY) / cellSize);
+                for (let col = Math.max(startCol, 0); col <= endCol && col < cols; col++) {
+                    for (let row = Math.max(startRow, 0); row <= endRow && row < rows; row++) grid.bodyCells[col * rows + row].push(who);
+                }
+            }
+            simulation.sight.buildIntersectMap();
+        },
+        buildIntersectMap() { //each wall's corners plus where other walls cross its edges, the grid rebuilds it whenever the map changes
+            const grid = simulation.sight.mapGrid;
+            const edges = grid.edges;
+            const edgeKinds = grid.edgeKinds;
+            const edgeStamps = grid.edgeStamps;
+            const edgeBodies = grid.edgeBodies;
+            const edgeNumbers = grid.edgeNumbers;
+            const intersectMap = [];
+            const found = [];
+            const byOrder = (a, b) => a.body - b.body || a.edge - b.edge; //the same order as a scan of every wall
+            for (let bodyIndex = 0; bodyIndex < grid.bodies.length; bodyIndex++) {
+                const obj = grid.bodies[bodyIndex];
+                if (obj.isRay) continue //tech: ray, you can see through the line left behind
+                const vertices = obj.vertices;
+                const newVertices = [];
+                for (let j = 0; j < vertices.length; j++) {
+                    const v1 = vertices[j];
+                    const v1End = vertices[(j + 1) % vertices.length];
+                    newVertices.push(v1);
+                    const rayMinX = v1.x < v1End.x ? v1.x : v1End.x;
+                    const rayMaxX = v1.x > v1End.x ? v1.x : v1End.x;
+                    const rayMinY = v1.y < v1End.y ? v1.y : v1End.y;
+                    const rayMaxY = v1.y > v1End.y ? v1.y : v1End.y;
+                    const rayDx = v1End.x - v1.x;
+                    const rayDy = v1End.y - v1.y;
+                    const stamp = ++grid.stamp;
+                    found.length = 0;
+                    const cellCount = simulation.sight.findLineCells(v1.x, v1.y, v1End.x, v1End.y);
+                    for (let c = 0; c < cellCount; c++) {
+                        const cellEdges = grid.edgeCells[grid.lineCells[c]];
+                        for (let k = 0; k < cellEdges.length; k++) {
+                            const edge = cellEdges[k];
+                            if (edgeStamps[edge] === stamp) continue;
+                            edgeStamps[edge] = stamp;
+                            if (!(edgeKinds[edge] & 2) || edgeBodies[edge] === bodyIndex) continue; //other walls' outlines
+                            const startX = edges[edge * 4];
+                            const startY = edges[edge * 4 + 1];
+                            const endX = edges[edge * 4 + 2];
+                            const endY = edges[edge * 4 + 3];
+                            if (rayMaxX < (startX < endX ? startX : endX) || (startX > endX ? startX : endX) < rayMinX ||
+                                rayMaxY < (startY < endY ? startY : endY) || (startY > endY ? startY : endY) < rayMinY) continue;
+                            const edgeDx = endX - startX;
+                            const edgeDy = endY - startY;
+                            const denominator = edgeDy * rayDx - edgeDx * rayDy;
+                            if (denominator === 0) continue;
+                            const offsetY = v1.y - startY;
+                            const offsetX = v1.x - startX;
+                            const rayFraction = (edgeDx * offsetY - edgeDy * offsetX) / denominator;
+                            const edgeFraction = (rayDx * offsetY - rayDy * offsetX) / denominator;
+                            if (rayFraction > 0 && rayFraction < 1 && edgeFraction > 0 && edgeFraction < 1) {
+                                found.push({ body: edgeBodies[edge], edge: edgeNumbers[edge], x: v1.x + rayFraction * rayDx, y: v1.y + rayFraction * rayDy });
+                            }
+                        }
+                    }
+                    if (found.length > 1) found.sort(byOrder);
+                    for (let k = 0; k < found.length; k++) newVertices.push({ x: found[k].x, y: found[k].y });
+                }
+                intersectMap.push({ vertices: newVertices });
+            }
+            simulation.sight.intersectMap = intersectMap;
+        },
+        findLineCells(x1, y1, x2, y2) { //lists every cell the line touches into grid.lineCells in order from start to end, returns how many
+            const grid = simulation.sight.mapGrid;
+            const lineCells = grid.lineCells;
+            const cols = grid.cols;
+            const rows = grid.rows;
+            if (cols === 0) return 0;
+            const size = grid.cellSize;
+            const pad = grid.pad;
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const stepCol = dx < 0 ? -1 : 1;
+            const stepRow = dy < 0 ? -1 : 1;
+            let col = Math.floor((x1 - stepCol * pad - grid.originX) / size);
+            let lastCol = Math.floor((x2 + stepCol * pad - grid.originX) / size);
+            col = col < 0 ? 0 : col >= cols ? cols - 1 : col;
+            lastCol = lastCol < 0 ? 0 : lastCol >= cols ? cols - 1 : lastCol;
+            let count = 0;
+            for (let i = (lastCol - col) * stepCol; i >= 0; i--, col += stepCol) {
+                let enter = 0;
+                let exit = 1;
+                if (dx !== 0) { //the part of the line in this column
+                    const left = grid.originX + col * size - pad;
+                    const right = left + size + 2 * pad;
+                    enter = ((stepCol > 0 ? left : right) - x1) / dx;
+                    exit = ((stepCol > 0 ? right : left) - x1) / dx;
+                    if (enter < 0) enter = 0;
+                    if (exit > 1) exit = 1;
+                    if (enter > exit) continue;
+                }
+                let row = Math.floor((y1 + enter * dy - stepRow * pad - grid.originY) / size);
+                let lastRow = Math.floor((y1 + exit * dy + stepRow * pad - grid.originY) / size);
+                row = row < 0 ? 0 : row >= rows ? rows - 1 : row;
+                lastRow = lastRow < 0 ? 0 : lastRow >= rows ? rows - 1 : lastRow;
+                for (let j = (lastRow - row) * stepRow; j >= 0; j--, row += stepRow) lineCells[count++] = col * rows + row;
+            }
+            return count;
+        },
+        isPointInWall(point) { //same as a zero length Matter.Query.segmentAny, only checks the walls in the point's cell
+            const grid = simulation.sight.mapGrid;
+            if (grid.cols === 0) return false;
+            const col = Math.floor((point.x - grid.originX) / grid.cellSize);
+            const row = Math.floor((point.y - grid.originY) / grid.cellSize);
+            if (!(col >= 0 && col < grid.cols && row >= 0 && row < grid.rows)) return false;
+            return Matter.Query.segmentAny(grid.bodyCells[col * grid.rows + row], point, point);
+        },
+        isSightBlocked(start, end) { //same as Matter.Query.segmentAny on the map, circleLoS checks the start with isPointInWall
+            const grid = simulation.sight.mapGrid;
+            const x1 = start.x;
+            const y1 = start.y;
+            const x2 = end.x;
+            const y2 = end.y;
+            const rayMinX = x1 < x2 ? x1 : x2;
+            const rayMaxX = x1 > x2 ? x1 : x2;
+            const rayMinY = y1 < y2 ? y1 : y2;
+            const rayMaxY = y1 > y2 ? y1 : y2;
+            const rayDx = x2 - x1;
+            const rayDy = y2 - y1;
+            const edges = grid.edges;
+            const edgeKinds = grid.edgeKinds;
+            const edgeStamps = grid.edgeStamps;
+            const stamp = ++grid.stamp;
+            const cellCount = simulation.sight.findLineCells(x1, y1, x2, y2);
+            for (let i = 0; i < cellCount; i++) {
+                const cell = grid.edgeCells[grid.lineCells[i]];
+                for (let j = 0; j < cell.length; j++) {
+                    const id = cell[j];
+                    if (edgeStamps[id] === stamp || !(edgeKinds[id] & 1)) continue;
+                    edgeStamps[id] = stamp;
+                    const ax = edges[id * 4];
+                    const ay = edges[id * 4 + 1];
+                    const bx = edges[id * 4 + 2];
+                    const by = edges[id * 4 + 3];
+                    if ((ax < bx ? bx : ax) < rayMinX || rayMaxX < (ax < bx ? ax : bx) || (ay < by ? by : ay) < rayMinY || rayMaxY < (ay < by ? ay : by)) continue;
+                    const edgeDx = bx - ax;
+                    const edgeDy = by - ay;
+                    const denominator = edgeDy * rayDx - edgeDx * rayDy;
+                    if (denominator === 0) continue;
+                    const offsetY = y1 - ay;
+                    const offsetX = x1 - ax;
+                    const rayFraction = (edgeDx * offsetY - edgeDy * offsetX) / denominator;
+                    const edgeFraction = (rayDx * offsetY - rayDy * offsetX) / denominator;
+                    if (rayFraction > 0 && rayFraction < 1 && edgeFraction > 0 && edgeFraction < 1) return true;
+                }
+            }
+            return simulation.sight.isPointInWall(end);
+        },
+        getIntersection(v1, v1End) { //the nearest wall from v1 to v1End, or v1End if there's nothing in the way
+            const grid = simulation.sight.mapGrid;
+            const x1 = v1.x;
+            const y1 = v1.y;
+            const x2 = v1End.x;
+            const y2 = v1End.y;
+            const rayMinX = x1 < x2 ? x1 : x2;
+            const rayMaxX = x1 > x2 ? x1 : x2;
+            const rayMinY = y1 < y2 ? y1 : y2;
+            const rayMaxY = y1 > y2 ? y1 : y2;
+            const rayDx = x2 - x1;
+            const rayDy = y2 - y1;
+            const stepCol = rayDx < 0 ? -1 : 1;
+            const stepRow = rayDy < 0 ? -1 : 1;
+            const rows = grid.rows;
+            const edges = grid.edges;
+            const edgeKinds = grid.edgeKinds;
+            const edgeStamps = grid.edgeStamps;
+            const stamp = ++grid.stamp;
+            let bestX = x2;
+            let bestY = y2;
+            let bestDist = rayDx * rayDx + rayDy * rayDy;
+            let stopRank = Infinity;
+            const cellCount = simulation.sight.findLineCells(x1, y1, x2, y2);
+            for (let i = 0; i < cellCount; i++) {
+                const cellIndex = grid.lineCells[i];
+                const cell = grid.edgeCells[cellIndex];
+                for (let j = 0; j < cell.length; j++) {
+                    const id = cell[j];
+                    if (edgeStamps[id] === stamp || !(edgeKinds[id] & 2)) continue;
+                    edgeStamps[id] = stamp;
+                    const ax = edges[id * 4];
+                    const ay = edges[id * 4 + 1];
+                    const bx = edges[id * 4 + 2];
+                    const by = edges[id * 4 + 3];
+                    if ((ax < bx ? bx : ax) < rayMinX || rayMaxX < (ax < bx ? ax : bx) || (ay < by ? by : ay) < rayMinY || rayMaxY < (ay < by ? ay : by)) continue;
+                    const edgeDx = bx - ax;
+                    const edgeDy = by - ay;
+                    const denominator = edgeDy * rayDx - edgeDx * rayDy;
+                    if (denominator === 0) continue;
+                    const offsetY = y1 - ay;
+                    const offsetX = x1 - ax;
+                    const rayFraction = (edgeDx * offsetY - edgeDy * offsetX) / denominator;
+                    const edgeFraction = (rayDx * offsetY - rayDy * offsetX) / denominator;
+                    if (rayFraction > 0 && rayFraction < 1 && edgeFraction > 0 && edgeFraction < 1) {
+                        const hitX = x1 + rayFraction * rayDx;
+                        const hitY = y1 + rayFraction * rayDy;
+                        const dist = (hitX - x1) ** 2 + (hitY - y1) ** 2;
+                        if (dist < bestDist) {
+                            bestX = hitX;
+                            bestY = hitY;
+                            bestDist = dist;
+                            //a long wall in a near cell can be hit far away, so keep going until the line reaches the hit's cell, anything closer is in a cell before that
+                            let col = Math.floor((hitX + stepCol * grid.pad - grid.originX) / grid.cellSize);
+                            let row = Math.floor((hitY + stepRow * grid.pad - grid.originY) / grid.cellSize);
+                            col = col < 0 ? 0 : col >= grid.cols ? grid.cols - 1 : col;
+                            row = row < 0 ? 0 : row >= rows ? rows - 1 : row;
+                            stopRank = stepCol * col * rows + stepRow * row;
+                        }
+                    }
+                }
+                if (stopRank !== Infinity) {
+                    const col = (cellIndex - cellIndex % rows) / rows;
+                    if (stepCol * col * rows + stepRow * (cellIndex % rows) >= stopRank) break;
+                }
+            }
+            return { x: bestX, y: bestY, dist: Math.sqrt(bestDist) };
+        },
     },
     draw: {
+
+        isMapPathRebuildPending: false,
+        requestMapPathRebuild() {
+            simulation.draw.isMapPathRebuildPending = true;
+        },
+        flushMapPathRebuild() {
+            if (!simulation.draw.isMapPathRebuildPending) return false;
+            simulation.draw.isMapPathRebuildPending = false;
+            simulation.draw.setPaths(); //line of sight picks up the moved walls by itself, see simulation.sight.updateMapGrid()
+            return true;
+        },
 
         mapPath: null, //holds the path for the map to speed up drawing
         setPaths() {
             //runs at each new level to store the path for the map since the map doesn't change
             simulation.draw.mapPath = new Path2D();
             for (let i = 0, len = map.length; i < len; ++i) {
+                if (map[i].isRay) continue //tech: ray, draws its own walls
                 let vertices = map[i].vertices;
                 simulation.draw.mapPath.moveTo(vertices[0].x, vertices[0].y);
                 for (let j = 1; j < vertices.length; j += 1) {
@@ -1713,37 +2032,35 @@ const simulation = {
                 simulation.draw.mapPath.lineTo(vertices[0].x, vertices[0].y);
             }
         },
-        lineOfSightPrecalculation() {
-            simulation.sight.intersectMap = [];
-            for (var i = 0; i < map.length; i++) {
-                const obj = map[i];
-                const newVertices = [];
-                const restOfMap = [...map].slice(0, i).concat([...map].slice(i + 1))
-                for (var j = 0; j < obj.vertices.length - 1; j++) {
-                    var intersections = simulation.sight.getIntersections(obj.vertices[j], obj.vertices[j + 1], restOfMap);
-                    newVertices.push(obj.vertices[j]);
-                    for (const vertex of intersections) newVertices.push({ x: vertex.x, y: vertex.y });
-                }
-                intersections = simulation.sight.getIntersections(obj.vertices[obj.vertices.length - 1], obj.vertices[0], restOfMap);
-                newVertices.push(obj.vertices[obj.vertices.length - 1]);
-                for (const vertex of intersections) newVertices.push({ x: vertex.x, y: vertex.y });
-                //draw the vertices as black circles for debugging
-                // for (const vertex of newVertices) {
-                //     ctx.beginPath();
-                //     ctx.moveTo(vertex.x, vertex.y);
-                //     ctx.arc(vertex.x, vertex.y, 10, 0, 2 * Math.PI);
-                //     ctx.fillStyle = '#000';
-                //     ctx.fill()
-                // }
-                simulation.sight.intersectMap.push({ vertices: newVertices });
+        isLineOfSight() { //subway, the line of sight setting, and community maps with line of sight all replace drawMapPath
+            return simulation.draw.drawMapPath !== simulation.draw.drawMapPathDefault
+        },
+        mapColor(mapColor = color.map) { //for things drawn to look like the map, like covers over hidden areas, line of sight doesn't fill the map so they match the background instead
+            return simulation.draw.isLineOfSight() ? document.body.style.backgroundColor : mapColor
+        },
+        updateLineOfSightSetting() { //line of sight setting draws every level like subway, levels with their own map drawing are left alone
+            if (localSettings.isLineOfSight && simulation.draw.drawMapPath === simulation.draw.drawMapPathDefault) {
+                simulation.draw.drawMapPath = simulation.draw.drawMapSightSetting
+                simulation.draw.lineOfSightPrecalculation() //required precalculation for line of sight
+            } else if (!localSettings.isLineOfSight && simulation.draw.drawMapPath === simulation.draw.drawMapSightSetting) {
+                simulation.draw.drawMapPath = simulation.draw.drawMapPathDefault
             }
+        },
+        lineOfSightPrecalculation() { //rebuilds the sight grid and the corners in intersectMap now, circleLoS also rebuilds them by itself whenever the map changes
+            simulation.sight.buildMapGrid()
         },
         drawMapPath() { },
         drawMapPathDefault() {
             ctx.fillStyle = color.map;
             ctx.fill(simulation.draw.mapPath);
         },
-        drawMapSight() {
+        drawMapSightSetting() {
+            simulation.draw.drawMapSight(true)
+        },
+        drawMapSightLevel() { //a level that's always line of sight, like the level editor's line of sight setting, the pause menu's setting can't turn it off
+            simulation.draw.drawMapSight(true)
+        },
+        drawMapSight(isShadeSight = false) {
             if (!simulation.isTimeSkipping) {
                 const pos = m.pos
                 const radius = 4000
@@ -1780,6 +2097,11 @@ const simulation = {
                     ctx.globalCompositeOperation = "destination-in";
                     ctx.fillStyle = "#000";
                     ctx.fill();
+                    if (isShadeSight) { //darken what you can see behind everything drawn so far, subway does this with a rect in level.custom
+                        ctx.globalCompositeOperation = "destination-over";
+                        ctx.fillStyle = "rgba(0,0,0,0.1)";
+                        ctx.fill();
+                    }
                     ctx.globalCompositeOperation = "source-over";
 
                     // make map visible
@@ -1800,17 +2122,21 @@ const simulation = {
                 }
                 ctx.lineTo(vertices[0].x, vertices[0].y);
             }
-            ctx.lineWidth = 2;
             ctx.fillStyle = color.block;
             ctx.fill();
-            ctx.strokeStyle = color.blockS;
-            ctx.stroke();
+            if (!localSettings.isHideHUD) { //performance mode: no stroke on blocks, checked every frame so the pause menu toggle applies right away
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = color.blockS;
+                ctx.stroke();
+            }
         },
         body() { },
         cons() {
             ctx.beginPath();
             for (let i = 0, len = cons.length; i < len; ++i) {
-                ctx.moveTo(cons[i].pointA.x, cons[i].pointA.y);
+                const { pointA, bodyA } = cons[i];
+                if (bodyA) ctx.moveTo(bodyA.position.x + pointA.x, bodyA.position.y + pointA.y);
+                else ctx.moveTo(pointA.x, pointA.y);
                 // ctx.lineTo(cons[i].bodyB.position.x, cons[i].bodyB.position.y);
                 ctx.lineTo(cons[i].bodyB.position.x + cons[i].pointB.x, cons[i].bodyB.position.y + cons[i].pointB.y);
             }
@@ -1824,9 +2150,6 @@ const simulation = {
             ctx.stroke();
         },
         wireFrame() {
-            // ctx.textAlign = "center";
-            // ctx.textBaseline = "middle";
-            // ctx.fillStyle = "#999";
             const bodies = Composite.allBodies(engine.world);
             ctx.beginPath();
             for (let i = 0; i < bodies.length; ++i) {
@@ -1893,12 +2216,21 @@ const simulation = {
             word: new Path2D(),
             xPos: 0,
             yPos: 0,
+            path(text, x, y, size = 40) { //the text as its own Path2D, size is how tall, word stays what it was so announceText still draws its own
+                const word = this.word
+                this.word = new Path2D()
+                this.drawString(text, 0, 0)
+                const path = new Path2D()
+                path.addPath(this.word, new DOMMatrix().translate(x, y).scale(size / 40))
+                this.word = word
+                return path
+            },
             drawString(text, x, y) {
                 this.xPos = x
                 this.yPos = y
                 const letters = text.toLowerCase().split('')
                 letters.forEach((letter, index) => {
-                    if (letter >= 'a' && letter <= 'z' && this[letter]) {
+                    if (letter !== ' ' && letter.length === 1 && typeof this[letter] === "function") { //letters, numbers, and the punctuation below z
                         this[letter]()
                         if (index < letters.length - 1) {
                             this.xPos += 29
@@ -2144,7 +2476,144 @@ const simulation = {
                 this.word.lineTo(this.xPos + 17, this.yPos + 0)
                 this.word.lineTo(this.xPos + 0, this.yPos + 40)
                 this.word.lineTo(this.xPos + 17, this.yPos + 40)
-            }
+            },
+            dot(x, y) { //a tiny circle, the stroke makes it a dot, for . ! ? and :
+                this.word.moveTo(this.xPos + x + 1.5, this.yPos + y)
+                this.word.arc(this.xPos + x, this.yPos + y, 1.5, 0, 2 * Math.PI)
+            },
+            "0"() { //narrower than o, with a slash
+                this.word.moveTo(this.xPos + 18, this.yPos + 20);
+                this.word.ellipse(this.xPos + 9, this.yPos + 20, 9, 20, 0, 0, 2 * Math.PI);
+                this.word.moveTo(this.xPos + 16, this.yPos + 8);
+                this.word.lineTo(this.xPos + 2, this.yPos + 32);
+            },
+            "1"() {
+                this.word.moveTo(this.xPos + 3, this.yPos + 8)
+                this.word.lineTo(this.xPos + 10, this.yPos + 0)
+                this.word.lineTo(this.xPos + 10, this.yPos + 40)
+                this.word.moveTo(this.xPos + 2, this.yPos + 40)
+                this.word.lineTo(this.xPos + 18, this.yPos + 40)
+            },
+            "2"() {
+                this.word.moveTo(this.xPos + 0, this.yPos + 8);
+                this.word.bezierCurveTo(this.xPos + 0, this.yPos + 3, this.xPos + 3, this.yPos + 0, this.xPos + 9, this.yPos + 0);
+                this.word.bezierCurveTo(this.xPos + 15, this.yPos + 0, this.xPos + 18, this.yPos + 3, this.xPos + 18, this.yPos + 10);
+                this.word.bezierCurveTo(this.xPos + 18, this.yPos + 18, this.xPos + 10, this.yPos + 24, this.xPos + 0, this.yPos + 40);
+                this.word.lineTo(this.xPos + 18, this.yPos + 40);
+            },
+            "3"() {
+                this.word.moveTo(this.xPos + 0, this.yPos + 6);
+                this.word.bezierCurveTo(this.xPos + 1, this.yPos + 2, this.xPos + 4, this.yPos + 0, this.xPos + 9, this.yPos + 0);
+                this.word.bezierCurveTo(this.xPos + 15, this.yPos + 0, this.xPos + 18, this.yPos + 3, this.xPos + 18, this.yPos + 10);
+                this.word.bezierCurveTo(this.xPos + 18, this.yPos + 16, this.xPos + 14, this.yPos + 19, this.xPos + 7, this.yPos + 19);
+                this.word.bezierCurveTo(this.xPos + 15, this.yPos + 19, this.xPos + 19, this.yPos + 23, this.xPos + 19, this.yPos + 30);
+                this.word.bezierCurveTo(this.xPos + 19, this.yPos + 37, this.xPos + 15, this.yPos + 40, this.xPos + 9, this.yPos + 40);
+                this.word.bezierCurveTo(this.xPos + 4, this.yPos + 40, this.xPos + 1, this.yPos + 38, this.xPos + 0, this.yPos + 34);
+            },
+            "4"() {
+                this.word.moveTo(this.xPos + 14, this.yPos + 40)
+                this.word.lineTo(this.xPos + 14, this.yPos + 0)
+                this.word.lineTo(this.xPos + 0, this.yPos + 27)
+                this.word.lineTo(this.xPos + 19, this.yPos + 27)
+            },
+            "5"() {
+                this.word.moveTo(this.xPos + 17, this.yPos + 0);
+                this.word.lineTo(this.xPos + 2, this.yPos + 0);
+                this.word.lineTo(this.xPos + 1, this.yPos + 18);
+                this.word.bezierCurveTo(this.xPos + 4, this.yPos + 16, this.xPos + 6, this.yPos + 15, this.xPos + 9, this.yPos + 15);
+                this.word.bezierCurveTo(this.xPos + 15, this.yPos + 15, this.xPos + 19, this.yPos + 20, this.xPos + 19, this.yPos + 27);
+                this.word.bezierCurveTo(this.xPos + 19, this.yPos + 35, this.xPos + 15, this.yPos + 40, this.xPos + 9, this.yPos + 40);
+                this.word.bezierCurveTo(this.xPos + 4, this.yPos + 40, this.xPos + 1, this.yPos + 38, this.xPos + 0, this.yPos + 34);
+            },
+            "6"() {
+                this.word.moveTo(this.xPos + 16, this.yPos + 3);
+                this.word.bezierCurveTo(this.xPos + 14, this.yPos + 1, this.xPos + 12, this.yPos + 0, this.xPos + 9, this.yPos + 0);
+                this.word.bezierCurveTo(this.xPos + 3, this.yPos + 0, this.xPos + 0, this.yPos + 8, this.xPos + 0, this.yPos + 30);
+                this.word.moveTo(this.xPos + 18, this.yPos + 30);
+                this.word.ellipse(this.xPos + 9, this.yPos + 30, 9, 10, 0, 0, 2 * Math.PI);
+            },
+            "7"() {
+                this.word.moveTo(this.xPos + 0, this.yPos + 0)
+                this.word.lineTo(this.xPos + 18, this.yPos + 0)
+                this.word.lineTo(this.xPos + 6, this.yPos + 40)
+            },
+            "8"() {
+                this.word.moveTo(this.xPos + 17, this.yPos + 10);
+                this.word.ellipse(this.xPos + 9, this.yPos + 10, 8, 10, 0, 0, 2 * Math.PI);
+                this.word.moveTo(this.xPos + 18, this.yPos + 30);
+                this.word.ellipse(this.xPos + 9, this.yPos + 30, 9, 10, 0, 0, 2 * Math.PI);
+            },
+            "9"() { //6 turned around
+                this.word.moveTo(this.xPos + 18, this.yPos + 10);
+                this.word.ellipse(this.xPos + 9, this.yPos + 10, 9, 10, 0, 0, 2 * Math.PI);
+                this.word.moveTo(this.xPos + 18, this.yPos + 10);
+                this.word.bezierCurveTo(this.xPos + 18, this.yPos + 32, this.xPos + 15, this.yPos + 40, this.xPos + 9, this.yPos + 40);
+                this.word.bezierCurveTo(this.xPos + 6, this.yPos + 40, this.xPos + 4, this.yPos + 39, this.xPos + 2, this.yPos + 37);
+            },
+            "."() {
+                this.dot(9, 38)
+            },
+            ","() {
+                this.word.moveTo(this.xPos + 10, this.yPos + 35)
+                this.word.lineTo(this.xPos + 7, this.yPos + 44)
+            },
+            "!"() {
+                this.word.moveTo(this.xPos + 9, this.yPos + 0)
+                this.word.lineTo(this.xPos + 9, this.yPos + 28)
+                this.dot(9, 38)
+            },
+            "?"() {
+                this.word.moveTo(this.xPos + 1, this.yPos + 8);
+                this.word.bezierCurveTo(this.xPos + 1, this.yPos + 3, this.xPos + 4, this.yPos + 0, this.xPos + 9, this.yPos + 0);
+                this.word.bezierCurveTo(this.xPos + 15, this.yPos + 0, this.xPos + 18, this.yPos + 3, this.xPos + 18, this.yPos + 9);
+                this.word.bezierCurveTo(this.xPos + 18, this.yPos + 15, this.xPos + 9, this.yPos + 17, this.xPos + 9, this.yPos + 24);
+                this.word.lineTo(this.xPos + 9, this.yPos + 28);
+                this.dot(9, 38)
+            },
+            ":"() {
+                this.dot(9, 12)
+                this.dot(9, 34)
+            },
+            "'"() {
+                this.word.moveTo(this.xPos + 9, this.yPos + 0)
+                this.word.lineTo(this.xPos + 9, this.yPos + 10)
+            },
+            "-"() {
+                this.word.moveTo(this.xPos + 3, this.yPos + 20)
+                this.word.lineTo(this.xPos + 15, this.yPos + 20)
+            },
+            "+"() {
+                this.word.moveTo(this.xPos + 2, this.yPos + 20)
+                this.word.lineTo(this.xPos + 16, this.yPos + 20)
+                this.word.moveTo(this.xPos + 9, this.yPos + 13)
+                this.word.lineTo(this.xPos + 9, this.yPos + 27)
+            },
+            "="() {
+                this.word.moveTo(this.xPos + 2, this.yPos + 14)
+                this.word.lineTo(this.xPos + 16, this.yPos + 14)
+                this.word.moveTo(this.xPos + 2, this.yPos + 26)
+                this.word.lineTo(this.xPos + 16, this.yPos + 26)
+            },
+            "/"() {
+                this.word.moveTo(this.xPos + 17, this.yPos + 0)
+                this.word.lineTo(this.xPos + 1, this.yPos + 40)
+            },
+            "("() {
+                this.word.moveTo(this.xPos + 14, this.yPos + 0);
+                this.word.bezierCurveTo(this.xPos + 4, this.yPos + 8, this.xPos + 4, this.yPos + 32, this.xPos + 14, this.yPos + 40);
+            },
+            ")"() {
+                this.word.moveTo(this.xPos + 4, this.yPos + 0);
+                this.word.bezierCurveTo(this.xPos + 14, this.yPos + 8, this.xPos + 14, this.yPos + 32, this.xPos + 4, this.yPos + 40);
+            },
+            "%"() {
+                this.word.moveTo(this.xPos + 18, this.yPos + 0)
+                this.word.lineTo(this.xPos + 0, this.yPos + 40)
+                this.word.moveTo(this.xPos + 8, this.yPos + 6)
+                this.word.arc(this.xPos + 4, this.yPos + 6, 4, 0, 2 * Math.PI)
+                this.word.moveTo(this.xPos + 18, this.yPos + 34)
+                this.word.arc(this.xPos + 14, this.yPos + 34, 4, 0, 2 * Math.PI)
+            },
             //letters are 50 tall and 40 wide
             // a() {
             //     this.word.moveTo(this.xPos + 0, this.yPos + 50)
@@ -2396,6 +2865,7 @@ const simulation = {
         simulation.setZoom();
 
         document.body.addEventListener("mouseup", (e) => {
+            let len
             if (simulation.testing && simulation.constructMouseDownPosition) {
                 function round(num, round = 25) {
                     return Math.ceil(num / round) * round;
@@ -2406,11 +2876,7 @@ const simulation = {
                 const dx = Math.max(25, round(simulation.mouseInGame.x) - x)
                 const dy = Math.max(25, round(simulation.mouseInGame.y) - y)
                 if (e.button === 1) {
-                    if (level.isProcedural) {
-                        simulation.outputMapString(`spawn.randomMob(x+${x}, ${y}, 0);\n`);
-                    } else {
-                        simulation.outputMapString(`spawn.randomMob(${x}, ${y}, 0);\n`);
-                    }
+                    simulation.outputMapString(`[${x}, ${y}],\n`);
                 } else if (e.button === 4) {
                     simulation.outputMapString(`${Math.floor(simulation.constructMouseDownPosition.x)}, ${Math.floor(simulation.constructMouseDownPosition.y)} `);
                 } else if (simulation.mouseInGame.x > simulation.constructMouseDownPosition.x && simulation.mouseInGame.y > simulation.constructMouseDownPosition.y) { //make sure that the width and height are positive
@@ -2423,7 +2889,6 @@ const simulation = {
                         if (level.isProcedural) {
                             simulation.outputMapString(`spawn.mapRect(x+${x}, ${y}, ${dx}, ${dy});\n`);
                         } else if (level.isVerticalFLipLevel) {
-                            console.log('hi')
                             simulation.outputMapString(`spawn.mapRect(${x}, ${y}, ${dx}, ${dy});\n`);
                             simulation.outputMapString(`//spawn.mapRect(${x}, ${-y - dy}, ${dx}, ${dy});\n`);
                         } else {
@@ -2461,6 +2926,7 @@ const simulation = {
         });
 
         document.body.addEventListener("wheel", (e) => {
+            if (simulation.paused || simulation.isChoosing || build.isExperimentSelection || simulation.onTitlePage) return //only zoom during active gameplay, not while scrolling menus
             if (e.deltaY > 0) {
                 simulation.setZoom(simulation.zoomScale / 0.9)
             } else {
@@ -2497,49 +2963,13 @@ const simulation = {
             out += simulation.constructMapString[i];
             outHTML += "<div>" + simulation.constructMapString[i] + "</div>"
         }
-        console.log(out)
+        console.log(out) // eslint-disable-line no-console
         navigator.clipboard.writeText(out).then(function () {
             /* clipboard successfully set */
         }, function () {
             /* clipboard write failed */
-            console.log('copy failed')
+            console.log('copy failed') // eslint-disable-line no-console
         });
         document.getElementById("construct").innerHTML = outHTML
     },
-    // copyToClipBoard(value) {
-    //     // Create a fake textarea
-    //     const textAreaEle = document.createElement('textarea');
-
-    //     // Reset styles
-    //     textAreaEle.style.border = '0';
-    //     textAreaEle.style.padding = '0';
-    //     textAreaEle.style.margin = '0';
-
-    //     // Set the absolute position
-    //     // User won't see the element
-    //     textAreaEle.style.position = 'absolute';
-    //     textAreaEle.style.left = '-9999px';
-    //     textAreaEle.style.top = `0px`;
-
-    //     // Set the value
-    //     textAreaEle.value = value
-
-    //     // Append the textarea to body
-    //     document.body.appendChild(textAreaEle);
-
-    //     // Focus and select the text
-    //     textAreaEle.focus();
-    //     textAreaEle.select();
-
-    //     // Execute the "copy" command
-    //     try {
-    //         document.execCommand('copy');
-    //     } catch (err) {
-    //         // Unable to copy
-    //         console.log(err)
-    //     } finally {
-    //         // Remove the textarea
-    //         document.body.removeChild(textAreaEle);
-    //     }
-    // },
 };
